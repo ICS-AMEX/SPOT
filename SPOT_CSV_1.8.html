@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Comparison Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+        th {
+            background-color: #f4f4f4;
+        }
+        .diff-table {
+            margin-top: 40px;
+        }
+        .highlight {
+            background-color: #ffcccc;
+        }
+    </style>
+</head>
+<body>
+    <h1>CSV Comparison Tool</h1>
+    <p>Upload two CSV files to compare their differences.</p>
+    <input type="file" id="csvFile1" accept=".csv">
+    <input type="file" id="csvFile2" accept=".csv">
+    <button onclick="compareCSV()">Compare</button>
+    <div id="output"></div>
+
+    <script>
+        function readCSV(file, callback) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const text = e.target.result;
+                const rows = text.trim().split("\n").map(row => row.split(","));
+                callback(rows);
+            };
+            reader.readAsText(file);
+        }
+
+        function compareCSV() {
+            const file1 = document.getElementById("csvFile1").files[0];
+            const file2 = document.getElementById("csvFile2").files[0];
+            if (!file1 || !file2) {
+                alert("Please upload both CSV files.");
+                return;
+            }
+
+            readCSV(file1, csv1 => {
+                readCSV(file2, csv2 => {
+                    const differences = [];
+                    const maxRows = Math.max(csv1.length, csv2.length);
+
+                    for (let i = 0; i < maxRows; i++) {
+                        const row1 = csv1[i] || [];
+                        const row2 = csv2[i] || [];
+                        const maxCols = Math.max(row1.length, row2.length);
+
+                        for (let j = 0; j < maxCols; j++) {
+                            const cell1 = row1[j] || "";
+                            const cell2 = row2[j] || "";
+
+                            if (cell1 !== cell2) {
+                                differences.push({
+                                    row: i + 1,
+                                    column: j + 1,
+                                    value1: cell1,
+                                    value2: cell2
+                                });
+                            }
+                        }
+                    }
+
+                    displayDifferences(differences);
+                });
+            });
+        }
+
+        function displayDifferences(differences) {
+            const outputDiv = document.getElementById("output");
+            outputDiv.innerHTML = "";
+
+            if (differences.length === 0) {
+                outputDiv.innerHTML = "<p>No differences found.</p>";
+                return;
+            }
+
+            const table = document.createElement("table");
+            table.classList.add("diff-table");
+
+            const headerRow = document.createElement("tr");
+            headerRow.innerHTML = `
+                <th>Row</th>
+                <th>Column</th>
+                <th>File 1 Value</th>
+                <th>File 2 Value</th>
+            `;
+            table.appendChild(headerRow);
+
+            differences.forEach(diff => {
+                const row = document.createElement("tr");
+                row.innerHTML = `
+                    <td>${diff.row}</td>
+                    <td>${diff.column}</td>
+                    <td class="highlight">${diff.value1}</td>
+                    <td class="highlight">${diff.value2}</td>
+                `;
+                table.appendChild(row);
+            });
+
+            outputDiv.appendChild(table);
+        }
+    </script>
+</body>
+</html>
