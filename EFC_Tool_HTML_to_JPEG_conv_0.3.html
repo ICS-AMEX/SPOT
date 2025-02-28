@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML to JPG Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 20px;
+        }
+        #preview img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h2>Upload an HTML file to convert it into a JPG</h2>
+    <input type="file" id="htmlFile" accept=".html" required><br><br>
+    <button onclick="convertHtmlToJpg()">Convert & Download</button>
+    <h3>Rendered Image:</h3>
+    <canvas id="canvas" style="display:none"></canvas>
+    <div id="preview"></div>
+
+    <script>
+        async function convertHtmlToJpg() {
+            const htmlFile = document.getElementById("htmlFile").files[0];
+            if (!htmlFile) {
+                alert("Please upload an HTML file.");
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = async function (event) {
+                const htmlContent = event.target.result;
+                const tempDiv = document.createElement("div");
+                tempDiv.innerHTML = htmlContent;
+                tempDiv.style.width = "fit-content";
+                document.body.appendChild(tempDiv);
+                
+                // Wait for all images to load
+                const images = tempDiv.getElementsByTagName("img");
+                await Promise.all(Array.from(images).map(img => new Promise(resolve => {
+                    img.onload = img.onerror = resolve;
+                })));
+                
+                // Convert HTML to Image using html2canvas
+                const canvas = document.getElementById("canvas");
+                const ctx = canvas.getContext("2d");
+                const htmlImage = await html2canvas(tempDiv, {useCORS: true, width: tempDiv.scrollWidth});
+                canvas.width = tempDiv.scrollWidth;
+                canvas.height = tempDiv.scrollHeight;
+                ctx.drawImage(htmlImage, 0, 0);
+                document.body.removeChild(tempDiv);
+                
+                // Show preview
+                const imageUrl = canvas.toDataURL("image/jpeg");
+                document.getElementById("preview").innerHTML = `<img src="${imageUrl}" alt="Rendered Image">`;
+                
+                // Create a download link
+                const link = document.createElement("a");
+                link.href = imageUrl;
+                link.download = "converted.jpg";
+                link.innerText = "Download JPG";
+                document.getElementById("preview").appendChild(link);
+            };
+            reader.readAsText(htmlFile);
+        }
+    </script>
+</body>
+</html>
