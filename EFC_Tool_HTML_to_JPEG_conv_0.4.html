@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML to JPG Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 20px;
+        }
+        #preview img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h2>Upload an HTML file to convert it into a JPG</h2>
+    <input type="file" id="htmlFile" accept=".html" required><br><br>
+    <button onclick="convertHtmlToJpg()">Convert & Download</button>
+    <h3>Rendered Image:</h3>
+    <canvas id="canvas" style="display:none"></canvas>
+    <div id="preview"></div>
+
+    <script>
+        async function convertHtmlToJpg() {
+            const htmlFile = document.getElementById("htmlFile").files[0];
+            if (!htmlFile) {
+                alert("Please upload an HTML file.");
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = async function (event) {
+                const htmlContent = event.target.result;
+                const tempDiv = document.createElement("div");
+                tempDiv.innerHTML = htmlContent;
+                tempDiv.style.position = "absolute";
+                tempDiv.style.left = "-9999px";
+                document.body.appendChild(tempDiv);
+                
+                // Wait for all images to load
+                const images = tempDiv.getElementsByTagName("img");
+                await Promise.all(Array.from(images).map(img => new Promise(resolve => {
+                    img.onload = img.onerror = resolve;
+                })));
+                
+                // Convert HTML to Image using html2canvas with trimming
+                const canvas = document.getElementById("canvas");
+                const ctx = canvas.getContext("2d");
+                const htmlImage = await html2canvas(tempDiv, {
+                    useCORS: true,
+                    width: tempDiv.scrollWidth,
+                    height: tempDiv.scrollHeight,
+                    backgroundColor: null,
+                    removeContainer: true,
+                });
+                
+                // Auto-crop white spaces
+                const imgData = htmlImage.getContext('2d').getImageData(0, 0, htmlImage.width, htmlImage.height);
+                let left = htmlImage.width, right = 0, top = htmlImage.height, bottom = 0;
+                for (let y = 0; y < htmlImage.height; y++) {
+                    for (let x = 0; x < htmlImage.width; x++) {
+                        let alpha = imgData.data[(y * htmlImage.width + x) * 4 + 3];
+                        if (alpha > 0) { // Detect non-transparent pixels
+                            if (x < left) left = x;
+                            if (x > right) right = x;
+                            if (y < top) top = y;
+                            if (y > bottom) bottom = y;
+                        }
+                    }
+                }
+                let cropWidth = right - left + 1;
+                let cropHeight = bottom - top + 1;
+                canvas.width = cropWidth;
+                canvas.height = cropHeight;
+                ctx.drawImage(htmlImage, left, top, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+                document.body.removeChild(tempDiv);
+                
+                // Show preview
+                const imageUrl = canvas.toDataURL("image/jpeg");
+                document.getElementById("preview").innerHTML = `<img src="${imageUrl}" alt="Rendered Image">`;
+                
+                // Create a download link
+                const link = document.createElement("a");
+                link.href = imageUrl;
+                link.download = "converted.jpg";
+                link.innerText = "Download JPG";
+                document.getElementById("preview").appendChild(link);
+            };
+            reader.readAsText(htmlFile);
+        }
+    </script>
+</body>
+</html>
