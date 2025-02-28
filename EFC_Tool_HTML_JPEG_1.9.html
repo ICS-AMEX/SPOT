@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML to JPG Comparator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/resemble.js/2.2.3/Resemble.min.js"></script>
+</head>
+<body>
+    <h2>Upload an HTML file and a JPG image</h2>
+    <input type="file" id="htmlFile" accept=".html" required><br><br>
+    <input type="file" id="jpgFile" accept="image/jpeg" required><br><br>
+    <button onclick="processFiles()">Compare Images</button>
+    <h3>Results:</h3>
+    <div id="result"></div>
+    <canvas id="canvas1" style="display:none"></canvas>
+    <canvas id="canvas2" style="display:none"></canvas>
+    <canvas id="diffCanvas"></canvas>
+
+    <script>
+        async function processFiles() {
+            const htmlFile = document.getElementById("htmlFile").files[0];
+            const jpgFile = document.getElementById("jpgFile").files[0];
+            if (!htmlFile || !jpgFile) {
+                alert("Please upload both files.");
+                return;
+            }
+            
+            // Read HTML file and convert to image
+            const reader = new FileReader();
+            reader.onload = async function (event) {
+                const htmlContent = event.target.result;
+                const tempDiv = document.createElement("div");
+                tempDiv.innerHTML = htmlContent;
+                document.body.appendChild(tempDiv);
+                
+                // Convert HTML to Image using html2canvas
+                const canvas1 = document.getElementById("canvas1");
+                const htmlImage = await html2canvas(tempDiv);
+                canvas1.width = 500;
+                canvas1.height = 500;
+                const ctx1 = canvas1.getContext("2d");
+                ctx1.drawImage(htmlImage, 0, 0, 500, 500);
+                document.body.removeChild(tempDiv);
+                
+                // Read and resize JPG file
+                const img = new Image();
+                const jpgReader = new FileReader();
+                jpgReader.onload = function (e) {
+                    img.src = e.target.result;
+                    img.onload = function () {
+                        const canvas2 = document.getElementById("canvas2");
+                        canvas2.width = 500;
+                        canvas2.height = 500;
+                        const ctx2 = canvas2.getContext("2d");
+                        ctx2.drawImage(img, 0, 0, 500, 500);
+                        compareImages();
+                    };
+                };
+                jpgReader.readAsDataURL(jpgFile);
+            };
+            reader.readAsText(htmlFile);
+        }
+        
+        function compareImages() {
+            const canvas1 = document.getElementById("canvas1");
+            const canvas2 = document.getElementById("canvas2");
+            
+            const img1 = canvas1.toDataURL("image/png");
+            const img2 = canvas2.toDataURL("image/png");
+            
+            Resemble(img1).compareTo(img2).onComplete(function(data) {
+                document.getElementById("result").innerHTML = `
+                    <p>Difference Percentage: ${parseFloat(data.misMatchPercentage).toFixed(2)}%</p>
+                    <h4>Difference Image:</h4>
+                    <img src="${data.getImageDataUrl()}" alt="Difference Image">
+                `;
+            });
+        }
+    </script>
+</body>
+</html>
