@@ -1,0 +1,141 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compare HTML and JPG</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        #htmlContent {
+            border: 1px solid #000;
+            padding: 10px;
+            width: 400px;
+            height: 300px;
+        }
+        #result {
+            margin-top: 20px;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Compare HTML and JPG</h1>
+    <div id="htmlContent" contenteditable="true">
+        <p>Edit this HTML content and compare it with a JPG image.</p>
+    </div>
+    <br>
+    <label for="jpgFile">Upload JPG File:</label>
+    <input type="file" id="jpgFile" accept=".jpg,.jpeg" required><br><br>
+    <button onclick="processImages()">Compare</button>
+
+    <h2>Result:</h2>
+    <div id="result"></div>
+
+    <script>
+        async function processImages() {
+            const htmlContent = document.getElementById('htmlContent');
+            const jpgFileInput = document.getElementById('jpgFile');
+            const resultDiv = document.getElementById('result');
+
+            // Step 1: Convert HTML to image using html2canvas
+            const htmlCanvas = await html2canvas(htmlContent);
+            const htmlImage = await loadImageFromCanvas(htmlCanvas);
+
+            // Step 2: Load the uploaded JPG image
+            const jpgFile = jpgFileInput.files[0];
+            if (!jpgFile) {
+                alert('Please upload a JPG file.');
+                return;
+            }
+            const jpgImage = await loadImageFromFile(jpgFile);
+
+            // Step 3: Resize both images to the same size
+            const resizedWidth = 400;
+            const resizedHeight = 300;
+            const resizedHtmlImage = resizeImage(htmlImage, resizedWidth, resizedHeight);
+            const resizedJpgImage = resizeImage(jpgImage, resizedWidth, resizedHeight);
+
+            // Step 4: Compare the images and calculate the difference
+            const { differencePercentage, differenceImage } = compareImages(resizedHtmlImage, resizedJpgImage);
+
+            // Step 5: Display the results
+            resultDiv.innerHTML = `
+                <p>Difference Percentage: ${differencePercentage.toFixed(2)}%</p>
+                <p>Difference Image:</p>
+                <img src="${differenceImage}" alt="Difference Image">
+            `;
+        }
+
+        function loadImageFromCanvas(canvas) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.src = canvas.toDataURL();
+                img.onload = () => resolve(img);
+            });
+        }
+
+        function loadImageFromFile(file) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    img.src = e.target.result;
+                    img.onload = () => resolve(img);
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function resizeImage(image, width, height) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0, width, height);
+            return canvas;
+        }
+
+        function compareImages(image1, image2) {
+            const canvas = document.createElement('canvas');
+            canvas.width = image1.width;
+            canvas.height = image1.height;
+            const ctx = canvas.getContext('2d');
+
+            // Draw the first image
+            ctx.drawImage(image1, 0, 0);
+
+            // Draw the second image and use difference blending
+            ctx.globalCompositeOperation = 'difference';
+            ctx.drawImage(image2, 0, 0);
+
+            // Calculate the difference percentage
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            let diffPixels = 0;
+
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                if (r !== 0 || g !== 0 || b !== 0) {
+                    diffPixels++;
+                }
+            }
+
+            const totalPixels = canvas.width * canvas.height;
+            const differencePercentage = (diffPixels / totalPixels) * 100;
+
+            // Convert the difference image to a data URL
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.putImageData(imageData, 0, 0);
+            const differenceImage = canvas.toDataURL();
+
+            return { differencePercentage, differenceImage };
+        }
+    </script>
+</body>
+</html>
