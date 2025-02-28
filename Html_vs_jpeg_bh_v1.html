@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML vs Image Comparison</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        canvas {
+            border: 1px solid black;
+            margin: 10px;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h2>Compare HTML Render and Image</h2>
+    <label for="htmlFile">Upload HTML File:</label>
+    <input type="file" id="htmlFile" accept=".html"><br><br>
+    <label for="imageFile">Upload Image File:</label>
+    <input type="file" id="imageFile" accept="image/*"><br><br>
+    <button onclick="processFiles()">Compare</button>
+    <h3>Rendered HTML:</h3>
+    <canvas id="htmlCanvas"></canvas>
+    <h3>Uploaded Image:</h3>
+    <canvas id="imageCanvas"></canvas>
+    <h3>Differences Highlighted:</h3>
+    <canvas id="diffCanvas"></canvas>
+    <script>
+        const htmlCanvas = document.getElementById("htmlCanvas");
+        const imgCanvas = document.getElementById("imageCanvas");
+        const diffCanvas = document.getElementById("diffCanvas");
+        const ctxHtml = htmlCanvas.getContext("2d");
+        const ctxImg = imgCanvas.getContext("2d");
+        const ctxDiff = diffCanvas.getContext("2d");
+        const WIDTH = 800; // Standardized width, height will be adjusted
+        let htmlFile, imageFile;
+        document.getElementById("htmlFile").addEventListener("change", function(event) {
+            htmlFile = event.target.files[0];
+        });
+        document.getElementById("imageFile").addEventListener("change", function(event) {
+            imageFile = event.target.files[0];
+        });
+        function processFiles() {
+            if (!htmlFile || !imageFile) {
+                alert("Please upload both HTML and image files.");
+                return;
+            }
+            renderHTML();
+        }
+        // Render HTML to an iframe and capture it using html2canvas
+        function renderHTML() {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const iframe = document.createElement("iframe");
+        iframe.style.position = "absolute";
+        iframe.style.width = WIDTH + "px";
+        iframe.style.visibility = "hidden";
+        document.body.appendChild(iframe);
+        iframe.srcdoc = e.target.result;
+        iframe.onload = () => {
+            const doc = iframe.contentDocument;
+            // Convert all <img> sources to Data URLs
+            const imgElements = doc.querySelectorAll("img");
+            let imgPromises = [];
+            imgElements.forEach(img => {
+                let imgSrc = img.src;
+                imgPromises.push(fetch(imgSrc)
+                    .then(response => response.blob())
+                    .then(blob => new Promise(resolve => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            img.src = reader.result;  // Replace src with Base64 data
+                            resolve();
+                        };
+                        reader.readAsDataURL(blob);
+                    }))
+                    .catch(() => console.warn(`Failed to load image: ${imgSrc}`))
+                );
+            });
+            // Wait for all images to be converted, then render the page
+            Promise.all(imgPromises).then(() => {
+                setTimeout(() => {
+                    html2canvas(doc.body, { width: WIDTH, useCORS: true }).then(canvas => {
+                        const aspectRatio = canvas.height / canvas.width;
+                        const newHeight = WIDTH * aspectRatio;
+                        htmlCanvas.width = WIDTH;
+                        htmlCanvas.height = newHeight;
+                        ctxHtml.clearRect(0, 0, WIDTH, newHeight);
+                        ctxHtml.drawImage(canvas, 0, 0, WIDTH, newHeight);
+                        document.body.removeChild(iframe);
+                        loadImage(newHeight);
+                    });
+                }, 1000); // Wait for images to load
+            });
+        };
+    };
+    reader.readAsText(htmlFile);
+}
+        // Load Image to Canvas with Aspect Ratio Correction
+        // function loadImage(htmlHeight) {
+        //     const img = new Image();
+        //     const reader = new FileReader();
+        //     reader.onload = function(e) {
+        //         img.src = e.target.result;
+        //         img.onload = () => {
+        //             const aspectRatio = img.height / img.width;
+        //             const newHeight = WIDTH * aspectRatio; // Adjust height while keeping width fixed
+        //             imgCanvas.width = diffCanvas.width = WIDTH;
+        //             imgCanvas.height = diffCanvas.height = newHeight; // Adjust canvas heights dynamically
+        //             ctxImg.clearRect(0, 0, WIDTH, newHeight);
+        //             ctxImg.drawImage(img, 0, 0, WIDTH, newHeight);
+        //             compareImages(newHeight, htmlHeight);
+        //         };
+        //     };
+        //     reader.readAsDataURL(imageFile);
+        // }
+
+        function loadImage(htmlHeight) {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        img.src = e.target.result;
+        img.onload = () => {
+            // Use original image dimensions
+            const imgWidth = img.width;
+            const imgHeight = img.height;
+            // Set canvas size to match the image exactly
+            imgCanvas.width = diffCanvas.width = imgWidth;
+            imgCanvas.height = diffCanvas.height = imgHeight;
+            ctxImg.clearRect(0, 0, imgWidth, imgHeight);
+            ctxImg.drawImage(img, 0, 0, imgWidth, imgHeight);
+            compareImages(imgWidth, imgHeight, htmlHeight);
+        };
+    };
+    reader.readAsDataURL(imageFile);
+}
+function compareImages(imgWidth, imgHeight, htmlHeight) {
+    const minHeight = Math.min(imgHeight, htmlHeight); // Use the smaller height for comparison
+    const minWidth = Math.min(imgWidth, WIDTH); // Use the smaller width for comparison
+    const imgData1 = ctxHtml.getImageData(0, 0, minWidth, minHeight);
+    const imgData2 = ctxImg.getImageData(0, 0, minWidth, minHeight);
+    const diffData = ctxDiff.getImageData(0, 0, minWidth, minHeight);
+    let diffCount = 0;
+    for (let i = 0; i < imgData1.data.length; i += 4) {
+        const rDiff = Math.abs(imgData1.data[i] - imgData2.data[i]);
+        const gDiff = Math.abs(imgData1.data[i + 1] - imgData2.data[i + 1]);
+        const bDiff = Math.abs(imgData1.data[i + 2] - imgData2.data[i + 2]);
+        const totalDiff = rDiff + gDiff + bDiff;
+        if (totalDiff > 50) { // Threshold for difference
+            diffCount++;
+            diffData.data[i] = 255; // Highlight differences in Red
+            diffData.data[i + 1] = 0;
+            diffData.data[i + 2] = 0;
+            diffData.data[i + 3] = 255; // Full opacity
+        } else {
+            diffData.data[i] = imgData1.data[i];
+            diffData.data[i + 1] = imgData1.data[i + 1];
+            diffData.data[i + 2] = imgData1.data[i + 2];
+            diffData.data[i + 3] = 255;
+        }
+    }
+    diffCanvas.width = minWidth;
+    diffCanvas.height = minHeight;
+    ctxDiff.putImageData(diffData, 0, 0);
+    alert(`Differences found: ${diffCount} pixels`);
+}
+
+function trimCanvas(canvas) {
+    const ctx = canvas.getContext("2d");
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imgData.data;
+    let minX = canvas.width, maxX = 0, minY = canvas.height, maxY = 0;
+    for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+            const index = (y * canvas.width + x) * 4;
+            const alpha = pixels[index + 3];
+            if (alpha > 0) { // Detect non-transparent (non-white) areas
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+    }
+    const trimmedWidth = maxX - minX + 1;
+    const trimmedHeight = maxY - minY + 1;
+    const trimmedCanvas = document.createElement("canvas");
+    trimmedCanvas.width = trimmedWidth;
+    trimmedCanvas.height = trimmedHeight;
+    const trimmedCtx = trimmedCanvas.getContext("2d");
+    trimmedCtx.putImageData(ctx.getImageData(minX, minY, trimmedWidth, trimmedHeight), 0, 0);
+    return trimmedCanvas;
+}
+
+        // Compare Images
+        function compareImages(imgHeight, htmlHeight) {
+            const minHeight = Math.min(imgHeight, htmlHeight); // Use the smaller height for comparison
+            const imgData1 = ctxHtml.getImageData(0, 0, WIDTH, minHeight);
+            const imgData2 = ctxImg.getImageData(0, 0, WIDTH, minHeight);
+            const diffData = ctxDiff.getImageData(0, 0, WIDTH, minHeight);
+            let diffCount = 0;
+            for (let i = 0; i < imgData1.data.length; i += 4) {
+                const rDiff = Math.abs(imgData1.data[i] - imgData2.data[i]);
+                const gDiff = Math.abs(imgData1.data[i + 1] - imgData2.data[i + 1]);
+                const bDiff = Math.abs(imgData1.data[i + 2] - imgData2.data[i + 2]);
+                const totalDiff = rDiff + gDiff + bDiff;
+                if (totalDiff > 50) { // Threshold for difference
+                    diffCount++;
+                    diffData.data[i] = 255; // Highlight differences in Red
+                    diffData.data[i + 1] = 0;
+                    diffData.data[i + 2] = 0;
+                    diffData.data[i + 3] = 255; // Full opacity
+                } else {
+                    diffData.data[i] = imgData1.data[i];  // Keep original color
+                    diffData.data[i + 1] = imgData1.data[i + 1];
+                    diffData.data[i + 2] = imgData1.data[i + 2];
+                    diffData.data[i + 3] = 255;
+                }
+            }
+            diffCanvas.height = minHeight; // Set canvas height to smallest dimension
+            ctxDiff.putImageData(diffData, 0, 0);
+            alert(`Differences found: ${diffCount} pixels`);
+        }
+    </script>
+</body>
+</html>
