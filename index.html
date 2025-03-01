@@ -327,7 +327,7 @@
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = htmlContent;
       document.body.appendChild(tempDiv); // Append to body temporarily for rendering
-      html2canvas(tempDiv).then(function(canvas) {
+      html2canvas(tempDiv,{useCORS: true, backgroundColor: null, removeContainer: true}).then(function(canvas) {
         document.body.removeChild(tempDiv); // Remove the temporary div after rendering
         const imgData = canvas.toDataURL("image/png"); // Convert to image data URL
         callback(imgData); // Pass the image data URL to the callback
