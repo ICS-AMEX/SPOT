@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML to JPG Converter & Comparator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/resemble.js/2.2.3/Resemble.min.js"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 20px;
+        }
+        #preview img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h2>Upload an HTML file to convert it into a JPG</h2>
+    <input type="file" id="htmlFile" accept=".html" required><br><br>
+    <button onclick="convertHtmlToJpg()">Convert & Download</button>
+    <h3>Rendered Image:</h3>
+    <canvas id="canvas" style="display:none"></canvas>
+    <div id="preview"></div>
+    
+    <h2>Upload another image to compare</h2>
+    <input type="file" id="compareImage" accept="image/jpeg, image/png" required><br><br>
+    <button onclick="compareWithUploadedImage()">Compare Images</button>
+    <h3>Comparison Result:</h3>
+    <div id="comparisonResult"></div>
+
+    <script>
+        let generatedImageUrl = "";
+        let originalWidth, originalHeight;
+
+        async function convertHtmlToJpg() {
+            const htmlFile = document.getElementById("htmlFile").files[0];
+            if (!htmlFile) {
+                alert("Please upload an HTML file.");
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = async function (event) {
+                const htmlContent = event.target.result;
+                const tempDiv = document.createElement("div");
+                tempDiv.innerHTML = htmlContent;
+                tempDiv.style.position = "absolute";
+                tempDiv.style.left = "-9999px";
+                document.body.appendChild(tempDiv);
+                
+                // Wait for all images to load
+                const images = tempDiv.getElementsByTagName("img");
+                await Promise.all(Array.from(images).map(img => new Promise(resolve => {
+                    img.onload = img.onerror = resolve;
+                })));
+                
+                // Convert HTML to Image using html2canvas with trimming
+                const canvas = document.getElementById("canvas");
+                const ctx = canvas.getContext("2d");
+                const htmlImage = await html2canvas(tempDiv, {
+                    useCORS: true,
+                    backgroundColor: null,
+                    removeContainer: true,
+                });
+                
+                canvas.width = htmlImage.width;
+                canvas.height = htmlImage.height;
+                originalWidth = htmlImage.width;
+                originalHeight = htmlImage.height;
+                ctx.drawImage(htmlImage, 0, 0);
+                document.body.removeChild(tempDiv);
+                
+                // Show preview
+                generatedImageUrl = canvas.toDataURL("image/jpeg");
+                document.getElementById("preview").innerHTML = `<img src="${generatedImageUrl}" alt="Rendered Image">`;
+                
+                // Create a download link
+                const link = document.createElement("a");
+                link.href = generatedImageUrl;
+                link.download = "converted.jpg";
+                link.innerText = "Download JPG";
+                document.getElementById("preview").appendChild(link);
+            };
+            reader.readAsText(htmlFile);
+        }
+        
+        function compareWithUploadedImage() {
+            const compareFile = document.getElementById("compareImage").files[0];
+            if (!compareFile || !generatedImageUrl) {
+                alert("Please upload a comparison image and generate the HTML image first.");
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onload = function () {
+                    const compareCanvas = document.createElement("canvas");
+                    const ctx = compareCanvas.getContext("2d");
+                    compareCanvas.width = originalWidth;
+                    compareCanvas.height = originalHeight;
+                    ctx.drawImage(img, 0, 0, originalWidth, originalHeight);
+                    
+                    const resizedImageUrl = compareCanvas.toDataURL("image/png");
+                    
+                    // Use Resemble.js for comparison
+                    Resemble(generatedImageUrl).compareTo(resizedImageUrl).onComplete(function(data) {
+                        document.getElementById("comparisonResult").innerHTML = `
+                            <p>Difference Percentage: ${parseFloat(data.misMatchPercentage).toFixed(2)}%</p>
+                            <h4>Difference Image:</h4>
+                            <img src="${data.getImageDataUrl()}" alt="Difference Image">
+                        `;
+                    });
+                };
+            };
+            reader.readAsDataURL(compareFile);
+        }
+    </script>
+</body>
+</html>
