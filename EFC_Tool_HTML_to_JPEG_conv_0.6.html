@@ -2,61 +2,79 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Compare Image and HTML Text</title>
+  <title>Compare Text in JPEG and HTML</title>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
 </head>
 <body>
-  <h2>Upload JPEG and HTML to Compare Text</h2>
+  <h2>Compare Text Between Image and HTML</h2>
 
-  <input type="file" id="imageInput" accept="image/jpeg"><br><br>
+  <label>Select JPEG Image:</label>
+  <input type="file" id="imageInput" accept="image/jpeg, image/jpg"><br><br>
+
+  <label>Select HTML File:</label>
   <input type="file" id="htmlInput" accept=".html"><br><br>
+
   <button onclick="compareText()">Compare</button>
 
-  <h3>Difference:</h3>
-  <pre id="output"></pre>
+  <h3>Text Differences:</h3>
+  <pre id="output">Waiting for input...</pre>
 
   <script>
     async function compareText() {
-      const imageFile = document.getElementById('imageInput').files[0];
-      const htmlFile = document.getElementById('htmlInput').files[0];
+      const imageInput = document.getElementById('imageInput');
+      const htmlInput = document.getElementById('htmlInput');
       const output = document.getElementById('output');
       output.textContent = 'Processing...';
 
-      if (!imageFile || !htmlFile) {
-        output.textContent = 'Please upload both image and HTML files.';
+      if (!imageInput.files.length || !htmlInput.files.length) {
+        output.textContent = 'Please upload both files.';
         return;
       }
 
+      const imageFile = imageInput.files[0];
+      const htmlFile = htmlInput.files[0];
+
       try {
-        // Read HTML file and extract text
+        // Read the image as a data URL for OCR
+        const imageDataURL = await readFileAsDataURL(imageFile);
+
+        // Read HTML file content
         const htmlText = await htmlFile.text();
         const parser = new DOMParser();
         const doc = parser.parseFromString(htmlText, 'text/html');
-        const extractedHtmlText = doc.body.innerText.trim();
+        const htmlExtractedText = doc.body.innerText.trim();
 
-        // Perform OCR on the image
-        const ocrResult = await Tesseract.recognize(imageFile, 'eng');
-        const imageText = ocrResult.data.text.trim();
+        // Run OCR on image
+        const ocrResult = await Tesseract.recognize(imageDataURL, 'eng');
+        const imageExtractedText = ocrResult.data.text.trim();
 
-        // Split into lines for comparison
-        const imageLines = imageText.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-        const htmlLines = extractedHtmlText.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+        // Compare line by line
+        const htmlLines = htmlExtractedText.split('\n').map(line => line.trim()).filter(Boolean);
+        const imageLines = imageExtractedText.split('\n').map(line => line.trim()).filter(Boolean);
 
-        const diff = [];
-
-        const maxLength = Math.max(imageLines.length, htmlLines.length);
-        for (let i = 0; i < maxLength; i++) {
-          const imgLine = imageLines[i] || '';
+        const differences = [];
+        const maxLines = Math.max(htmlLines.length, imageLines.length);
+        for (let i = 0; i < maxLines; i++) {
           const htmlLine = htmlLines[i] || '';
-          if (imgLine !== htmlLine) {
-            diff.push(`Line ${i + 1}:\n- Image: "${imgLine}"\n+ HTML: "${htmlLine}"\n`);
+          const imageLine = imageLines[i] || '';
+          if (htmlLine !== imageLine) {
+            differences.push(`Line ${i + 1}:\n  🖼️ Image: "${imageLine}"\n  📝 HTML: "${htmlLine}"\n`);
           }
         }
 
-        output.textContent = diff.length ? diff.join('\n') : 'No differences found.';
+        output.textContent = differences.length ? differences.join('\n') : '✅ No differences found!';
       } catch (err) {
         output.textContent = 'Error: ' + err.message;
       }
+    }
+
+    function readFileAsDataURL(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
     }
   </script>
 </body>
