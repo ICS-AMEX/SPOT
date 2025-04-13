@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Compare Image and HTML Text</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+</head>
+<body>
+  <h2>Upload JPEG and HTML to Compare Text</h2>
+
+  <input type="file" id="imageInput" accept="image/jpeg"><br><br>
+  <input type="file" id="htmlInput" accept=".html"><br><br>
+  <button onclick="compareText()">Compare</button>
+
+  <h3>Difference:</h3>
+  <pre id="output"></pre>
+
+  <script>
+    async function compareText() {
+      const imageFile = document.getElementById('imageInput').files[0];
+      const htmlFile = document.getElementById('htmlInput').files[0];
+      const output = document.getElementById('output');
+      output.textContent = 'Processing...';
+
+      if (!imageFile || !htmlFile) {
+        output.textContent = 'Please upload both image and HTML files.';
+        return;
+      }
+
+      try {
+        // Read HTML file and extract text
+        const htmlText = await htmlFile.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlText, 'text/html');
+        const extractedHtmlText = doc.body.innerText.trim();
+
+        // Perform OCR on the image
+        const ocrResult = await Tesseract.recognize(imageFile, 'eng');
+        const imageText = ocrResult.data.text.trim();
+
+        // Split into lines for comparison
+        const imageLines = imageText.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+        const htmlLines = extractedHtmlText.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+
+        const diff = [];
+
+        const maxLength = Math.max(imageLines.length, htmlLines.length);
+        for (let i = 0; i < maxLength; i++) {
+          const imgLine = imageLines[i] || '';
+          const htmlLine = htmlLines[i] || '';
+          if (imgLine !== htmlLine) {
+            diff.push(`Line ${i + 1}:\n- Image: "${imgLine}"\n+ HTML: "${htmlLine}"\n`);
+          }
+        }
+
+        output.textContent = diff.length ? diff.join('\n') : 'No differences found.';
+      } catch (err) {
+        output.textContent = 'Error: ' + err.message;
+      }
+    }
+  </script>
+</body>
+</html>
