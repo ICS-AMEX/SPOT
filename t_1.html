@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced HTML/Image Comparison Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .upload-container {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .upload-box {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            width: 45%;
+            min-width: 300px;
+            background-color: white;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .upload-box h2 {
+            margin-top: 0;
+            color: #555;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 10px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #compareBtn {
+            background-color: #2196F3;
+            display: block;
+            margin: 0 auto 20px;
+            padding: 12px 24px;
+        }
+        #compareBtn:hover {
+            background-color: #0b7dda;
+        }
+        .result-container {
+            display: none;
+            margin-top: 20px;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .comparison-view {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .comparison-item {
+            width: 48%;
+            min-width: 300px;
+            margin-bottom: 20px;
+        }
+        .comparison-item h3 {
+            text-align: center;
+            color: #333;
+        }
+        .canvas-container {
+            border: 1px solid #ddd;
+            margin-top: 10px;
+            overflow: auto;
+            max-height: 600px;
+        }
+        canvas {
+            max-width: 100%;
+            display: block;
+        }
+        #mismatchPercentage {
+            font-weight: bold;
+            color: #e91e63;
+            font-size: 18px;
+            text-align: center;
+            margin: 10px 0;
+        }
+        .instructions {
+            background-color: #fffde7;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ffd600;
+        }
+        .progress-container {
+            width: 100%;
+            background-color: #f1f1f1;
+            border-radius: 4px;
+            margin: 10px 0;
+            display: none;
+        }
+        #progressBar {
+            width: 0%;
+            height: 20px;
+            background-color: #4CAF50;
+            border-radius: 4px;
+            text-align: center;
+            line-height: 20px;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>Enhanced HTML/Image Comparison Tool</h1>
+    
+    <div class="instructions">
+        <h3>How to use:</h3>
+        <ol>
+            <li>Upload a JPEG/PNG image using the first button</li>
+            <li>Upload an HTML file using the second button</li>
+            <li>Click "Compare" to analyze differences</li>
+        </ol>
+        <p>The tool will automatically align the content, highlight differences, and calculate mismatch percentage.</p>
+    </div>
+    
+    <div class="progress-container" id="progressContainer">
+        <div id="progressBar">0%</div>
+    </div>
+    
+    <div class="upload-container">
+        <div class="upload-box">
+            <h2>Upload Image</h2>
+            <input type="file" id="imageUpload" accept="image/jpeg,image/png" />
+            <div id="imagePreview" class="canvas-container"></div>
+        </div>
+        
+        <div class="upload-box">
+            <h2>Upload HTML</h2>
+            <input type="file" id="htmlUpload" accept=".html,.htm" />
+            <div id="htmlPreview" class="canvas-container"></div>
+        </div>
+    </div>
+    
+    <button id="compareBtn" disabled>Compare</button>
+    
+    <div class="result-container" id="resultContainer">
+        <h2>Comparison Results</h2>
+        <div id="mismatchPercentage"></div>
+        
+        <div class="comparison-view">
+            <div class="comparison-item">
+                <h3>Original Image</h3>
+                <div class="canvas-container">
+                    <canvas id="originalCanvas"></canvas>
+                </div>
+            </div>
+            
+            <div class="comparison-item">
+                <h3>Differences Highlighted</h3>
+                <div class="canvas-container">
+                    <canvas id="diffCanvas"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="comparison-view">
+            <div class="comparison-item">
+                <h3>Aligned HTML</h3>
+                <div class="canvas-container">
+                    <canvas id="alignedHtmlCanvas"></canvas>
+                </div>
+            </div>
+            
+            <div class="comparison-item">
+                <h3>Key Points Matched</h3>
+                <div class="canvas-container">
+                    <canvas id="featureCanvas"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let originalImage = null;
+        let htmlImage = null;
+        let imageCanvas = null;
+        let htmlCanvas = null;
+        
+        // DOM elements
+        const imageUpload = document.getElementById('imageUpload');
+        const htmlUpload = document.getElementById('htmlUpload');
+        const compareBtn = document.getElementById('compareBtn');
+        const resultContainer = document.getElementById('resultContainer');
+        const mismatchPercentage = document.getElementById('mismatchPercentage');
+        const imagePreview = document.getElementById('imagePreview');
+        const htmlPreview = document.getElementById('htmlPreview');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        
+        // Event listeners
+        imageUpload.addEventListener('change', handleImageUpload);
+        htmlUpload.addEventListener('change', handleHtmlUpload);
+        compareBtn.addEventListener('click', compareImages);
+        
+        // Handle image upload
+        function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                originalImage = new Image();
+                originalImage.onload = function() {
+                    // Create preview
+                    imagePreview.innerHTML = '';
+                    const previewCanvas = document.createElement('canvas');
+                    const ctx = previewCanvas.getContext('2d');
+                    const maxWidth = 300;
+                    const ratio = maxWidth / originalImage.width;
+                    previewCanvas.width = maxWidth;
+                    previewCanvas.height = originalImage.height * ratio;
+                    ctx.drawImage(originalImage, 0, 0, previewCanvas.width, previewCanvas.height);
+                    imagePreview.appendChild(previewCanvas);
+                    
+                    checkReadyToCompare();
+                };
+                originalImage.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        // Handle HTML upload
+        function handleHtmlUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                // Create an iframe to render the HTML
+                const iframe = document.createElement('iframe');
+                iframe.style.width = '100%';
+                iframe.style.height = '500px';
+                iframe.style.border = 'none';
+                htmlPreview.innerHTML = '';
+                htmlPreview.appendChild(iframe);
+                
+                // Write the HTML content to the iframe
+                iframe.contentDocument.open();
+                iframe.contentDocument.write(event.target.result);
+                iframe.contentDocument.close();
+                
+                // Wait for the HTML to render
+                iframe.onload = function() {
+                    // Create an image from the HTML
+                    html2canvas(iframe.contentDocument.body).then(canvas => {
+                        htmlImage = new Image();
+                        htmlImage.onload = function() {
+                            checkReadyToCompare();
+                        };
+                        htmlImage.src = canvas.toDataURL();
+                        
+                        // Show preview
+                        const previewCanvas = document.createElement('canvas');
+                        const ctx = previewCanvas.getContext('2d');
+                        const maxWidth = 300;
+                        const ratio = maxWidth / canvas.width;
+                        previewCanvas.width = maxWidth;
+                        previewCanvas.height = canvas.height * ratio;
+                        ctx.drawImage(canvas, 0, 0, previewCanvas.width, previewCanvas.height);
+                        htmlPreview.insertBefore(previewCanvas, iframe);
+                        iframe.style.display = 'none';
+                    });
+                };
+            };
+            reader.readAsText(file);
+        }
+        
+        // Check if both files are loaded and enable compare button
+        function checkReadyToCompare() {
+            if (originalImage && htmlImage) {
+                compareBtn.disabled = false;
+            }
+        }
+        
+        // Compare the images with sophisticated alignment
+        async function compareImages() {
+            if (!originalImage || !htmlImage) return;
+            
+            // Show progress
+            progressContainer.style.display = 'block';
+            updateProgress(10, "Starting comparison...");
+            
+            // Create canvases for comparison
+            const originalCanvas = document.getElementById('originalCanvas');
+            const diffCanvas = document.getElementById('diffCanvas');
+            const alignedHtmlCanvas = document.getElementById('alignedHtmlCanvas');
+            const featureCanvas = document.getElementById('featureCanvas');
+            
+            // Determine the target size (use the original image dimensions)
+            const targetWidth = originalImage.width;
+            const targetHeight = originalImage.height;
+            
+            // Set canvas sizes
+            originalCanvas.width = targetWidth;
+            originalCanvas.height = targetHeight;
+            diffCanvas.width = targetWidth;
+            diffCanvas.height = targetHeight;
+            alignedHtmlCanvas.width = targetWidth;
+            alignedHtmlCanvas.height = targetHeight;
+            featureCanvas.width = targetWidth;
+            featureCanvas.height = targetHeight;
+            
+            const originalCtx = originalCanvas.getContext('2d');
+            const diffCtx = diffCanvas.getContext('2d');
+            const alignedCtx = alignedHtmlCanvas.getContext('2d');
+            const featureCtx = featureCanvas.getContext('2d');
+            
+            // Draw the original image
+            originalCtx.drawImage(originalImage, 0, 0);
+            
+            updateProgress(20, "Detecting features...");
+            
+            // Detect features in both images
+            const originalFeatures = detectFeatures(originalCanvas);
+            const htmlFeatures = detectFeaturesFromImage(htmlImage);
+            
+            updateProgress(40, "Matching features...");
+            
+            // Match features between images
+            const matches = matchFeatures(originalFeatures, htmlFeatures);
+            
+            updateProgress(60, "Calculating transformation...");
+            
+            // Calculate homography transformation
+            const transformation = calculateHomography(matches);
+            
+            // Transform the HTML image to align with the original
+            const transformedHtml = transformImage(htmlImage, transformation, targetWidth, targetHeight);
+            
+            updateProgress(80, "Comparing images...");
+            
+            // Draw the aligned HTML image
+            alignedCtx.drawImage(transformedHtml, 0, 0);
+            
+            // Draw feature matches
+            drawFeatureMatches(featureCtx, originalImage, htmlImage, matches, transformation);
+            
+            // Compare the images pixel by pixel
+            const originalData = originalCtx.getImageData(0, 0, targetWidth, targetHeight).data;
+            const alignedData = alignedCtx.getImageData(0, 0, targetWidth, targetHeight).data;
+            
+            // Create difference image
+            const diffImageData = originalCtx.createImageData(targetWidth, targetHeight);
+            let diffCount = 0;
+            let totalPixels = 0;
+            
+            // Threshold for considering pixels different (0-255)
+            const differenceThreshold = 30;
+            
+            for (let i = 0; i < originalData.length; i += 4) {
+                // Only compare if not transparent
+                if (originalData[i+3] > 0 || alignedData[i+3] > 0) {
+                    const r1 = originalData[i];
+                    const g1 = originalData[i+1];
+                    const b1 = originalData[i+2];
+                    
+                    const r2 = alignedData[i];
+                    const g2 = alignedData[i+1];
+                    const b2 = alignedData[i+2];
+                    
+                    // Calculate color difference using Euclidean distance
+                    const diff = Math.sqrt(
+                        Math.pow(r1 - r2, 2) + 
+                        Math.pow(g1 - g2, 2) + 
+                        Math.pow(b1 - b2, 2)
+                    );
+                    
+                    if (diff > differenceThreshold) {
+                        // Highlight differences in red
+                        diffImageData.data[i] = 255;
+                        diffImageData.data[i+1] = 0;
+                        diffImageData.data[i+2] = 0;
+                        diffImageData.data[i+3] = 180; // Semi-transparent
+                        diffCount++;
+                    } else {
+                        // Show original with lower opacity
+                        diffImageData.data[i] = originalData[i];
+                        diffImageData.data[i+1] = originalData[i+1];
+                        diffImageData.data[i+2] = originalData[i+2];
+                        diffImageData.data[i+3] = originalData[i+3] * 0.7;
+                    }
+                    
+                    totalPixels++;
+                } else {
+                    // Transparent pixels - make them white in diff image
+                    diffImageData.data[i] = 255;
+                    diffImageData.data[i+1] = 255;
+                    diffImageData.data[i+2] = 255;
+                    diffImageData.data[i+3] = 0;
+                }
+            }
+            
+            // Calculate mismatch percentage
+            const mismatchPercent = totalPixels > 0 ? (diffCount / totalPixels * 100).toFixed(2) : 0;
+            mismatchPercentage.textContent = `Mismatch: ${mismatchPercent}%`;
+            
+            // Draw the difference image
+            diffCtx.putImageData(diffImageData, 0, 0);
+            
+            updateProgress(100, "Comparison complete!");
+            
+            // Show results
+            resultContainer.style.display = 'block';
+            
+            // Hide progress after a delay
+            setTimeout(() => {
+                progressContainer.style.display = 'none';
+            }, 2000);
+        }
+        
+        // Update progress bar
+        function updateProgress(percent, message) {
+            progressBar.style.width = percent + '%';
+            progressBar.textContent = percent + '% - ' + message;
+        }
+        
+        // Feature detection using Harris corner detection (simplified)
+        function detectFeatures(canvas) {
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const width = canvas.width;
+            const height = canvas.height;
+            const features = [];
+            
+            // Convert to grayscale first
+            const grayData = new Array(width * height);
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const i = (y * width + x) * 4;
+                    grayData[y * width + x] = 0.299 * imageData.data[i] + 
+                                             0.587 * imageData.data[i+1] + 
+                                             0.114 * imageData.data[i+2];
+                }
+            }
+            
+            // Simple corner detection (Harris-like)
+            const cornerThreshold = 1000000; // Adjust based on your images
+            const radius = 2; // Neighborhood radius
+            
+            for (let y = radius; y < height - radius; y++) {
+                for (let x = radius; x < width - radius; x++) {
+                    // Calculate gradients
+                    let ix = 0, iy = 0;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            const val = grayData[(y + dy) * width + (x + dx)];
+                            ix += dx * val;
+                            iy += dy * val;
+                        }
+                    }
+                    
+                    // Calculate Harris response
+                    const a = ix * ix;
+                    const b = iy * iy;
+                    const c = ix * iy;
+                    const response = a * b - c * c - 0.04 * (a + b) * (a + b);
+                    
+                    if (response > cornerThreshold) {
+                        // Check if this is a local maximum
+                        let isMax = true;
+                        for (let dy = -radius; dy <= radius && isMax; dy++) {
+                            for (let dx = -radius; dx <= radius && isMax; dx++) {
+                                if (dx === 0 && dy === 0) continue;
+                                const ni = (y + dy) * width + (x + dx);
+                                const nResponse = grayData[ni];
+                                if (response <= nResponse) {
+                                    isMax = false;
+                                }
+                            }
+                        }
+                        
+                        if (isMax) {
+                            features.push({
+                                x: x,
+                                y: y,
+                                descriptor: getFeatureDescriptor(grayData, width, height, x, y)
+                            });
+                        }
+                    }
+                }
+            }
+            
+            return features;
+        }
+        
+        // Detect features from an Image object
+        function detectFeaturesFromImage(image) {
+            const canvas = document
