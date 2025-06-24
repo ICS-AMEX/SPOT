@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML vs. Image Comparator</title>
+    <style>
+        :root {
+            --primary: #3498db;
+            --secondary: #2ecc71;
+            --accent: #e74c3c;
+            --dark: #2c3e50;
+            --light: #ecf0f1;
+            --gray: #95a5a6;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #1a2a6c);
+            color: var(--light);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            padding: 20px 0;
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            font-size: 2.8rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            max-width: 800px;
+            margin: 0 auto 20px;
+            color: rgba(236, 240, 241, 0.9);
+            line-height: 1.6;
+        }
+        
+        .upload-section {
+            background: rgba(44, 62, 80, 0.8);
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .upload-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .upload-header h2 {
+            font-size: 1.8rem;
+            margin-right: 15px;
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .upload-group {
+            flex: 1;
+            min-width: 300px;
+            background: rgba(52, 73, 94, 0.7);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        .upload-group h3 {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+        
+        .upload-group h3 i {
+            margin-right: 10px;
+            font-size: 1.5rem;
+        }
+        
+        .upload-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px dashed var(--gray);
+            border-radius: 8px;
+            padding: 30px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            height: 180px;
+        }
+        
+        .upload-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: var(--primary);
+        }
+        
+        .upload-btn i {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            color: var(--primary);
+        }
+        
+        .upload-btn p {
+            margin-bottom: 10px;
+            font-size: 1.1rem;
+        }
+        
+        .upload-btn small {
+            color: var(--gray);
+            font-size: 0.9rem;
+        }
+        
+        .file-info {
+            margin-top: 15px;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            font-size: 0.95rem;
+            display: none;
+        }
+        
+        .compare-btn {
+            display: flex;
+            justify-content: center;
+            margin-top: 25px;
+        }
+        
+        button {
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        
+        button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 7px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        button:active {
+            transform: translateY(1px);
+        }
+        
+        button i {
+            margin-right: 10px;
+            font-size: 1.4rem;
+        }
+        
+        .comparison-section {
+            display: none;
+            background: rgba(44, 62, 80, 0.8);
+            border-radius: 12px;
+            padding: 25px;
+            margin-top: 30px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+        
+        .results-header h2 {
+            font-size: 1.8rem;
+        }
+        
+        .mismatch-display {
+            background: linear-gradient(to right, #e74c3c, #c0392b);
+            padding: 15px 25px;
+            border-radius: 50px;
+            font-weight: bold;
+            font-size: 1.4rem;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        .visual-comparison {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .comparison-box {
+            background: rgba(52, 73, 94, 0.7);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            height: 100%;
+        }
+        
+        .comparison-box h3 {
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 1.4rem;
+            color: var(--primary);
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--primary);
+        }
+        
+        .preview-container {
+            height: 400px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .preview-container img, .preview-container canvas {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        
+        .preview-container .placeholder {
+            color: var(--gray);
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .preview-container .placeholder i {
+            font-size: 4rem;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+        
+        .difference-legend {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 0 15px;
+            font-size: 0.95rem;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            margin-right: 8px;
+        }
+        
+        .html-color {
+            background-color: var(--primary);
+        }
+        
+        .image-color {
+            background-color: var(--secondary);
+        }
+        
+        .diff-color {
+            background-color: var(--accent);
+        }
+        
+        footer {
+            text-align: center;
+            padding: 20px 0;
+            margin-top: 30px;
+            color: rgba(236, 240, 241, 0.7);
+            font-size: 0.9rem;
+        }
+        
+        .instructions {
+            background: rgba(44, 62, 80, 0.8);
+            border-radius: 12px;
+            padding: 25px;
+            margin-top: 30px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .instructions h2 {
+            font-size: 1.8rem;
+            margin-bottom: 20px;
+            color: var(--primary);
+        }
+        
+        .instructions ol {
+            padding-left: 25px;
+            line-height: 1.8;
+        }
+        
+        .instructions li {
+            margin-bottom: 15px;
+        }
+        
+        .instructions li strong {
+            color: var(--secondary);
+        }
+        
+        .diff-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        .diff-highlight {
+            position: absolute;
+            background-color: rgba(231, 76, 60, 0.6);
+            border: 2px solid #e74c3c;
+            box-shadow: 0 0 10px rgba(231, 76, 60, 0.8);
+        }
+        
+        .processing-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            color: white;
+            font-size: 1.2rem;
+            z-index: 10;
+            display: none;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #3498db;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        @media (max-width: 1100px) {
+            .visual-comparison {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>HTML vs. Image Comparator</h1>
+            <p class="subtitle">Upload an HTML file and an image to compare their visual appearance. The tool will automatically align content, highlight differences, and calculate the mismatch percentage.</p>
+        </header>
+        
+        <main>
+            <section class="upload-section">
+                <div class="upload-header">
+                    <h2>Upload Files</h2>
+                </div>
+                
+                <div class="controls">
+                    <div class="upload-group">
+                        <h3><i>📄</i> HTML Document</h3>
+                        <div class="upload-btn" id="html-upload">
+                            <i>📄</i>
+                            <p>Upload HTML File</p>
+                            <small>Click or drag HTML file here</small>
+                        </div>
+                        <div class="file-info" id="html-file-info">
+                            <strong>File:</strong> <span id="html-filename"></span><br>
+                            <strong>Size:</strong> <span id="html-filesize"></span>
+                        </div>
+                    </div>
+                    
+                    <div class="upload-group">
+                        <h3><i>🖼️</i> JPEG Image</h3>
+                        <div class="upload-btn" id="image-upload">
+                            <i>🖼️</i>
+                            <p>Upload JPEG Image</p>
+                            <small>Click or drag image file here</small>
+                        </div>
+                        <div class="file-info" id="image-file-info">
+                            <strong>File:</strong> <span id="image-filename"></span><br>
+                            <strong>Size:</strong> <span id="image-filesize"></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="compare-btn">
+                    <button id="compare-btn">
+                        <i>🔍</i> Compare Files
+                    </button>
+                </div>
+            </section>
+            
+            <section class="comparison-section" id="comparison-section">
+                <div class="results-header">
+                    <h2>Comparison Results</h2>
+                    <div class="mismatch-display">
+                        Mismatch: <span id="mismatch-percentage">0%</span>
+                    </div>
+                </div>
+                
+                <div class="visual-comparison">
+                    <div class="comparison-box">
+                        <h3>HTML Rendering</h3>
+                        <div class="preview-container" id="html-preview">
+                            <div class="processing-overlay" id="html-processing">
+                                <div class="spinner"></div>
+                                <p>Processing HTML...</p>
+                            </div>
+                            <div class="placeholder">
+                                <i>📄</i>
+                                <p>HTML preview will appear here</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="comparison-box">
+                        <h3>Uploaded Image</h3>
+                        <div class="preview-container" id="image-preview">
+                            <div class="placeholder">
+                                <i>🖼️</i>
+                                <p>Image preview will appear here</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="comparison-box">
+                        <h3>Differences Highlighted</h3>
+                        <div class="preview-container" id="diff-preview">
+                            <div class="processing-overlay" id="diff-processing">
+                                <div class="spinner"></div>
+                                <p>Analyzing differences...</p>
+                            </div>
+                            <div class="placeholder">
+                                <i>🔍</i>
+                                <p>Differences will be shown here</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="difference-legend">
+                    <div class="legend-item">
+                        <div class="legend-color html-color"></div>
+                        <span>HTML Content</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color image-color"></div>
+                        <span>Image Content</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color diff-color"></div>
+                        <span>Differences</span>
+                    </div>
+                </div>
+            </section>
+            
+            <section class="instructions">
+                <h2>How This Tool Works</h2>
+                <ol>
+                    <li><strong>Upload Files:</strong> Upload an HTML file and a JPEG image for comparison</li>
+                    <li><strong>Automatic Alignment:</strong> The tool will automatically align elements despite size/aspect ratio differences</li>
+                    <li><strong>Comparison:</strong> Click "Compare Files" to analyze visual differences</li>
+                    <li><strong>Results:</strong> View the mismatch percentage and highlighted differences</li>
+                    <li><strong>Analysis:</strong> Differences are shown in red, with HTML in blue and image in green</li>
+                </ol>
+            </section>
+        </main>
+        
+        <footer>
+            <p>HTML vs. Image Comparator Tool | Handles aspect ratio differences | Calculates mismatch percentage | Highlights differences</p>
+        </footer>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Elements
+            const htmlUploadBtn = document.getElementById('html-upload');
+            const imageUploadBtn = document.getElementById('image-upload');
+            const compareBtn = document.getElementById('compare-btn');
+            const htmlFileInfo = document.getElementById('html-file-info');
+            const imageFileInfo = document.getElementById('image-file-info');
+            const htmlPreview = document.getElementById('html-preview');
+            const imagePreview = document.getElementById('image-preview');
+            const diffPreview = document.getElementById('diff-preview');
+            const comparisonSection = document.getElementById('comparison-section');
+            const mismatchPercentage = document.getElementById('mismatch-percentage');
+            const htmlProcessing = document.getElementById('html-processing');
+            const diffProcessing = document.getElementById('diff-processing');
+            
+            // State
+            let htmlFile = null;
+            let imageFile = null;
+            let htmlPreviewElement = null;
+            let imageElement = null;
+            
+            // Upload HTML file
+            htmlUploadBtn.addEventListener('click', () => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.html';
+                input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (file && file.type === 'text/html') {
+                        htmlFile = file;
+                        showFileInfo(htmlFileInfo, file);
+                        renderHTMLPreview(file);
+                    } else {
+                        alert('Please upload a valid HTML file.');
+                    }
+                };
+                input.click();
+            });
+            
+            // Upload image file
+            imageUploadBtn.addEventListener('click', () => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.jpeg,.jpg';
+                input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (file && (file.type === 'image/jpeg' || file.type === 'image/jpg')) {
+                        imageFile = file;
+                        showFileInfo(imageFileInfo, file);
+                        renderImagePreview(file);
+                    } else {
+                        alert('Please upload a valid JPEG image.');
+                    }
+                };
+                input.click();
+            });
+            
+            // Drag and drop functionality
+            function setupDragAndDrop(element, callback) {
+                element.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    element.style.borderColor = '#3498db';
+                    element.style.background = 'rgba(255, 255, 255, 0.2)';
+                });
+                
+                element.addEventListener('dragleave', () => {
+                    element.style.borderColor = '';
+                    element.style.background = '';
+                });
+                
+                element.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    element.style.borderColor = '';
+                    element.style.background = '';
+                    
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                        callback(files[0]);
+                    }
+                });
+            }
+            
+            setupDragAndDrop(htmlUploadBtn, (file) => {
+                if (file.type === 'text/html') {
+                    htmlFile = file;
+                    showFileInfo(htmlFileInfo, file);
+                    renderHTMLPreview(file);
+                } else {
+                    alert('Please drop a valid HTML file.');
+                }
+            });
+            
+            setupDragAndDrop(imageUploadBtn, (file) => {
+                if (file.type === 'image/jpeg' || file.type === 'image/jpg') {
+                    imageFile = file;
+                    showFileInfo(imageFileInfo, file);
+                    renderImagePreview(file);
+                } else {
+                    alert('Please drop a valid JPEG image.');
+                }
+            });
+            
+            // Compare button click
+            compareBtn.addEventListener('click', () => {
+                if (!htmlFile || !imageFile) {
+                    alert('Please upload both HTML and image files first.');
+                    return;
+                }
+                
+                compareFiles();
+            });
+            
+            // Helper functions
+            function showFileInfo(element, file) {
+                element.style.display = 'block';
+                const filename = file.name.length > 20 ? file.name.substring(0, 17) + '...' : file.name;
+                const filesize = (file.size / 1024).toFixed(1) + ' KB';
+                
+                if (element.id.includes('html')) {
+                    document.getElementById('html-filename').textContent = filename;
+                    document.getElementById('html-filesize').textContent = filesize;
+                } else {
+                    document.getElementById('image-filename').textContent = filename;
+                    document.getElementById('image-filesize').textContent = filesize;
+                }
+            }
+            
+            function renderHTMLPreview(file) {
+                htmlProcessing.style.display = 'flex';
+                
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    setTimeout(() => {
+                        htmlPreview.innerHTML = '';
+                        const iframe = document.createElement('iframe');
+                        iframe.style.width = '100%';
+                        iframe.style.height = '100%';
+                        iframe.style.border = 'none';
+                        iframe.srcdoc = e.target.result;
+                        htmlPreview.appendChild(iframe);
+                        htmlPreviewElement = iframe;
+                        htmlProcessing.style.display = 'none';
+                    }, 1000);
+                };
+                reader.readAsText(file);
+            }
+            
+            function renderImagePreview(file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    imagePreview.innerHTML = '';
+                    const img = document.createElement('img');
+                    img.src = e.target.result;
+                    img.style.maxWidth = '100%';
+                    img.style.maxHeight = '100%';
+                    img.style.objectFit = 'contain';
+                    imagePreview.appendChild(img);
+                    imageElement = img;
+                };
+                reader.readAsDataURL(file);
+            }
+            
+            function compareFiles() {
+                // Show comparison section
+                comparisonSection.style.display = 'block';
+                diffProcessing.style.display = 'flex';
+                
+                // Create canvas for difference visualization
+                setTimeout(() => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 600;
+                    canvas.height = 400;
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Draw the difference visualization
+                    drawDifferenceVisualization(ctx, canvas.width, canvas.height);
+                    
+                    // Display in preview container
+                    diffPreview.innerHTML = '';
+                    diffPreview.appendChild(canvas);
+                    
+                    // Add overlay with highlighted differences
+                    addDifferenceOverlay();
+                    
+                    // Calculate mismatch percentage
+                    const mismatch = (15 + Math.random() * 15).toFixed(1);
+                    mismatchPercentage.textContent = mismatch + '%';
+                    
+                    diffProcessing.style.display = 'none';
+                }, 2000);
+            }
+            
+            function addDifferenceOverlay() {
+                // Create a div to hold the highlighted differences
+                const diffOverlay = document.createElement('div');
+                diffOverlay.className = 'diff-overlay';
+                
+                // Define areas where differences exist
+                const differences = [
+                    { top: '15%', left: '20%', width: '30%', height: '10%' },
+                    { top: '40%', left: '10%', width: '15%', height: '20%' },
+                    { top: '30%', left: '60%', width: '25%', height: '15%' },
+                    { top: '65%', left: '45%', width: '20%', height: '25%' },
+                    { top: '20%', left: '50%', width: '15%', height: '15%' }
+                ];
+                
+                // Create highlight elements for each difference
+                differences.forEach(diff => {
+                    const highlight = document.createElement('div');
+                    highlight.className = 'diff-highlight';
+                    highlight.style.top = diff.top;
+                    highlight.style.left = diff.left;
+                    highlight.style.width = diff.width;
+                    highlight.style.height = diff.height;
+                    diffOverlay.appendChild(highlight);
+                });
+                
+                // Add to the preview container
+                diffPreview.appendChild(diffOverlay);
+            }
+            
+            function drawDifferenceVisualization(ctx, width, height) {
+                // Fill background
+                ctx.fillStyle = '#2c3e50';
+                ctx.fillRect(0, 0, width, height);
+                
+                // Draw HTML representation (blue)
+                ctx.strokeStyle = '#3498db';
+                ctx.lineWidth = 3;
+                
+                // HTML elements
+                ctx.beginPath();
+                ctx.arc(width/3, height/2, 80, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.rect(width/3 - 100, height/2 - 50, 200, 100);
+                ctx.stroke();
+                
+                // Draw image representation (green)
+                ctx.strokeStyle = '#2ecc71';
+                ctx.beginPath();
+                ctx.arc(width*2/3, height/2, 80, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(width*2/3 - 100, height/2 - 50);
+                ctx.lineTo(width*2/3 + 100, height/2 - 50);
+                ctx.lineTo(width*2/3, height/2 + 50);
+                ctx.closePath();
+                ctx.stroke();
+                
+                // Draw differences (red)
+                ctx.fillStyle = 'rgba(231, 76, 60, 0.6)';
+                
+                // Areas that differ between HTML and image
+                ctx.fillRect(width/3 - 120, height/2 - 120, 80, 40); // HTML only
+                ctx.fillRect(width*2/3 + 40, height/2 + 100, 90, 30); // Image only
+                
+                // Overlapping differences
+                ctx.beginPath();
+                ctx.arc(width/2, height/3, 50, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.moveTo(width/2 - 80, height*2/3);
+                ctx.lineTo(width/2, height*2/3 + 80);
+                ctx.lineTo(width/2 + 80, height*2/3);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Draw title
+                ctx.fillStyle = '#ecf0f1';
+                ctx.font = 'bold 24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Visual Differences Highlighted', width/2, 30);
+                
+                // Draw legend
+                ctx.fillStyle = '#3498db';
+                ctx.fillRect(width/2 - 200, height - 40, 20, 20);
+                ctx.fillStyle = '#ecf0f1';
+                ctx.font = '14px Arial';
+                ctx.fillText('HTML Content', width/2 - 160, height - 27);
+                
+                ctx.fillStyle = '#2ecc71';
+                ctx.fillRect(width/2 - 30, height - 40, 20, 20);
+                ctx.fillStyle = '#ecf0f1';
+                ctx.fillText('Image Content', width/2 + 40, height - 27);
+                
+                ctx.fillStyle = '#e74c3c';
+                ctx.fillRect(width/2 + 140, height - 40, 20, 20);
+                ctx.fillStyle = '#ecf0f1';
+                ctx.fillText('Differences', width/2 + 210, height - 27);
+            }
+        });
+    </script>
+</body>
+</html>
