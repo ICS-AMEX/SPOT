@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>CSV Diff by Primary Key</title>
+<style>
+  :root{
+    --diff-bg:#ffd6e7;      /* pink for diffs */
+    --old-bg:#fafafa;       /* light bg for File A row */
+    --new-bg:#ffffff;       /* white for File B row */
+    --border:#e5e5e5;
+    --muted:#666;
+    --key-badge:#ececff;
+  }
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif; line-height:1.45; padding:24px; color:#111;}
+  h1{font-size:18px; margin:0 0 12px;}
+  .row{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;}
+  .block{display:flex; flex-direction:column; gap:6px;}
+  input[type="file"]{padding:6px; border:1px solid var(--border); border-radius:8px;}
+  input[type="number"]{width:96px; padding:6px 8px; border:1px solid var(--border); border-radius:8px;}
+  button{padding:10px 14px; border:1px solid #111; background:#111; color:#fff; border-radius:10px; cursor:pointer;}
+  button:disabled{opacity:.6; cursor:not-allowed;}
+  label{font-size:12px; color:var(--muted);}
+  #meta{margin-top:8px; font-size:12px; color:var(--muted);}
+  .results{margin-top:18px;}
+  .sticky{position:sticky; top:0; background:#fff; padding:10px 0; z-index:4;}
+  table{border-collapse:separate; border-spacing:0; width:100%; border:1px solid var(--border); border-radius:12px; overflow:hidden;}
+  thead th{position:sticky; top:0; background:#fff; border-bottom:1px solid var(--border); padding:10px; text-align:left; font-weight:600;}
+  tbody tr.group-header td{background:#f6f6ff; font-weight:600; color:#333; border-top:1px solid var(--border);}
+  tbody td{padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top;}
+  tbody tr.old td{background:var(--old-bg);}
+  tbody tr.new td{background:var(--new-bg);}
+  td.diff{background:var(--diff-bg);}
+  td.label{white-space:nowrap; font-size:12px; color:#333; width:1%;}
+  .badge{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; border:1px solid var(--border);}
+  .key{background:var(--key-badge);}
+  details{margin-top:12px;}
+  .summary{display:flex; gap:12px; flex-wrap:wrap; font-size:13px;}
+  .pill{padding:4px 10px; border:1px solid var(--border); border-radius:999px; background:#f9f9f9;}
+  .footer-note{margin-top:10px; font-size:12px; color:var(--muted);}
+</style>
+</head>
+<body>
+  <h1>Compare two CSVs by a Primary-Key Column</h1>
+  <div class="row">
+    <div class="block">
+      <label>File A (older / left)</label>
+      <input type="file" id="fileA" accept=".csv" />
+    </div>
+    <div class="block">
+      <label>File B (newer / right)</label>
+      <input type="file" id="fileB" accept=".csv" />
+    </div>
+    <div class="block">
+      <label>Primary key column (1-based)</label>
+      <input type="number" id="pk" min="1" value="2" />
+    </div>
+    <div class="block">
+      <label>&nbsp;</label>
+      <button id="go">Compare</button>
+    </div>
+  </div>
+  <div id="meta"></div>
+
+  <div class="results" id="results"></div>
+
+<script>
+/* Minimal CSV parser (handles quotes, commas, newlines, double quotes) */
+function parseCSV(text) {
+  const rows = [];
+  let row = [], val = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i+1] === '"') { val += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        val += c;
+      }
+    } else {
+      if (c === '"') { inQuotes = true; }
+      else if (c === ',') { row.push(val); val = ''; }
+      else if (c === '\n') { row.push(val); rows.push(row); row = []; val = ''; }
+      else if (c === '\r') { /* ignore */ }
+      else { val += c; }
+    }
+  }
+  if (val.length > 0 || row.length > 0) { row.push(val); rows.push(row); }
+  // drop trailing empty lines
+  return rows.filter(r => !(r.length === 1 && r[0].trim() === ''));
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read file.'));
+    reader.onload = () => resolve(reader.result);
+    reader.readAsText(file);
+  });
+}
+
+function normalize(v) {
+  return (v ?? '').toString().trim();
+}
+
+function arraysEqualShallow(a,b){
+  if (a.length !== b.length) return false;
+  for (let i=0;i<a.length;i++){
+    if (normalize(a[i]) !== normalize(b[i])) return false;
+  }
+  return true;
+}
+
+function buildIndex(rows, pkIndex) {
+  const idx = Object.create(null);
+  for (let i = 1; i < rows.length; i++) {  // assume row 0 is header
+    const r = rows[i];
+    const key = normalize(r[pkIndex]);
+    if (!key) continue; // skip blanks
+    idx[key] = r;
+  }
+  return idx;
+}
+
+function genHeaderLike(len) {
+  const h = [];
+  for (let i = 0; i < len; i++) h.push(`Col ${i+1}`);
+  return h;
+}
+
+function makeTable(headers, keys, idxA, idxB, pkIndex, nameA, nameB) {
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const trh = document.createElement('tr');
+
+  // First column for labels (A/B)
+  const firstTh = document.createElement('th');
+  firstTh.textContent = 'Row';
+  trh.appendChild(firstTh);
+
+  headers.forEach((h, i) => {
+    const th = document.createElement('th');
+    th.textContent = h || `Col ${i+1}`;
+    if (i === pkIndex) th.innerHTML = `${th.textContent} <span class="badge key">PK</span>`;
+    trh.appendChild(th);
+  });
+  thead.appendChild(trh);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+
+  keys.forEach(key => {
+    const rA = idxA[key] || null;
+    const rB = idxB[key] || null;
+
+    // Group header with the PK value
+    const gtr = document.createElement('tr');
+    gtr.className = 'group-header';
+    const gtd = document.createElement('td');
+    gtd.colSpan = headers.length + 1;
+    gtd.innerHTML = `Key: <span class="badge">${key || '(blank)'}</span> ${(!rA ? '— only in B' : (!rB ? '— only in A' : ''))}`;
+    gtr.appendChild(gtd);
+    tbody.appendChild(gtr);
+
+    // compute per-column diffs
+    const cols = headers.length;
+    const diffs = Array.from({length: cols}, (_, i) => {
+      const aVal = rA ? normalize(rA[i] ?? '') : '';
+      const bVal = rB ? normalize(rB[i] ?? '') : '';
+      return aVal !== bVal;
+    });
+
+    // Row A
+    const trA = document.createElement('tr');
+    trA.className = 'old';
+    const la = document.createElement('td');
+    la.className = 'label';
+    la.innerHTML = `<span class="badge">A</span>`;
+    trA.appendChild(la);
+    for (let i = 0; i < cols; i++) {
+      const td = document.createElement('td');
+      if (diffs[i]) td.classList.add('diff');
+      td.textContent = rA ? (rA[i] ?? '') : '(missing)';
+      trA.appendChild(td);
+    }
+    tbody.appendChild(trA);
+
+    // Row B
+    const trB = document.createElement('tr');
+    trB.className = 'new';
+    const lb = document.createElement('td');
+    lb.className = 'label';
+    lb.innerHTML = `<span class="badge">B</span>`;
+    trB.appendChild(lb);
+    for (let i = 0; i < cols; i++) {
+      const td = document.createElement('td');
+      if (diffs[i]) td.classList.add('diff');
+      td.textContent = rB ? (rB[i] ?? '') : '(missing)';
+      trB.appendChild(td);
+    }
+    tbody.appendChild(trB);
+  });
+
+  table.appendChild(tbody);
+  return table;
+}
+
+function summarize(keys, idxA, idxB, headers, pkIndex){
+  let changed = 0, same = 0, onlyA = 0, onlyB = 0;
+  keys.forEach(k=>{
+    const a = idxA[k], b = idxB[k];
+    if (a && b) {
+      if (arraysEqualShallow(a, b)) same++;
+      else changed++;
+    } else if (a && !b) onlyA++;
+    else if (!a && b) onlyB++;
+  });
+  const wrap = document.createElement('div');
+  wrap.className = 'summary';
+  const mk = (label,val)=>{const s=document.createElement('span'); s.className='pill'; s.textContent=`${label}: ${val}`; return s;}
+  wrap.append(mk('Keys', keys.length), mk('Unchanged', same), mk('Changed', changed), mk('Only in A', onlyA), mk('Only in B', onlyB));
+  return wrap;
+}
+
+document.getElementById('go').addEventListener('click', async ()=>{
+  const aFile = document.getElementById('fileA').files[0];
+  const bFile = document.getElementById('fileB').files[0];
+  const pkNum = parseInt(document.getElementById('pk').value, 10);
+  const meta = document.getElementById('meta');
+  const out = document.getElementById('results');
+  out.innerHTML = '';
+  meta.textContent = '';
+
+  if (!aFile || !bFile) {
+    alert('Select both CSV files.');
+    return;
+  }
+  if (!Number.isInteger(pkNum) || pkNum < 1) {
+    alert('Primary key column must be a 1-based integer (e.g., 2 for second column).');
+    return;
+  }
+
+  const [aText, bText] = await Promise.all([readFileAsText(aFile), readFileAsText(bFile)]);
+  let a = parseCSV(aText);
+  let b = parseCSV(bText);
+  if (a.length === 0 || b.length === 0) {
+    alert('One of the CSVs looks empty.');
+    return;
+  }
+
+  // Assume row 0 is header; if columns differ, pad shorter
+  const maxCols = Math.max(a[0].length, b[0].length);
+  const padRow = (r)=>{ if (r.length < maxCols) r.push(...Array(maxCols - r.length).fill('')); };
+  a.forEach(padRow); b.forEach(padRow);
+
+  const headers = (a[0].some(h=>h && h.trim()!=='') || b[0].some(h=>h && h.trim()!=='')) ? 
+                  (a[0].length >= b[0].length ? a[0] : b[0]) : genHeaderLike(maxCols);
+  const pkIndex = pkNum - 1;
+  if (pkIndex >= headers.length) {
+    alert(`Primary key index (${pkNum}) exceeds number of columns (${headers.length}).`);
+    return;
+  }
+
+  const idxA = buildIndex(a, pkIndex);
+  const idxB = buildIndex(b, pkIndex);
+
+  const keys = Array.from(new Set([...Object.keys(idxA), ...Object.keys(idxB)])).sort((x,y)=>{
+    // natural-ish sort
+    return x.localeCompare(y, undefined, {numeric:true, sensitivity:'base'});
+  });
+
+  const summary = summarize(keys, idxA, idxB, headers, pkIndex);
+  out.appendChild(summary);
+
+  const table = makeTable(headers, keys, idxA, idxB, pkIndex, aFile.name, bFile.name);
+  out.appendChild(table);
+
+  const fnA = aFile.name || 'File A';
+  const fnB = bFile.name || 'File B';
+  meta.textContent = `Compared "${fnA}" (A) vs "${fnB}" (B) — PK column: ${pkNum}`;
+});
+</script>
+
+<div class="footer-note">
+  Tip: The tool assumes the first row is the header. If your files don’t have headers, it will label columns as Col 1, Col 2, etc.
+</div>
+</body>
+</html>
