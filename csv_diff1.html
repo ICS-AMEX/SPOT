@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>CSV Diff by Primary Key</title>
+<style>
+  :root{
+    --diff-bg:#fff59d; /* YELLOW full-cell highlight */
+    --diff-part:#ffb6c1; /* PINK for partial inside text */
+    --old-bg:#fafafa;
+    --new-bg:#ffffff;
+    --border:#e5e5e5;
+    --muted:#666;
+    --key-badge:#ececff;
+  }
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif; line-height:1.45; padding:24px; color:#111;}
+  h1{font-size:18px; margin:0 0 12px;}
+  .row{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;}
+  .block{display:flex; flex-direction:column; gap:6px;}
+  input[type="file"], input[type="number"]{padding:6px 8px; border:1px solid var(--border); border-radius:8px;}
+  input[type="number"]{width:96px;}
+  button{padding:10px 14px; border:1px solid #111; background:#111; color:#fff; border-radius:10px; cursor:pointer;}
+  button:disabled{opacity:.6; cursor:not-allowed;}
+  label.caption{font-size:12px; color:var(--muted);}
+  #meta{margin-top:8px; font-size:12px; color:var(--muted);}
+
+  .toggles{display:flex; gap:24px; flex-wrap:wrap; align-items:center; margin:10px 0 0;}
+  .toggle-item{display:flex; align-items:center; gap:10px; font-size:14px;}
+
+  /* iOS-style switch */
+  .switch{position:relative; display:inline-block; width:46px; height:26px;}
+  .switch input{opacity:0; width:0; height:0;}
+  .slider{position:absolute; inset:0; background:#e5e5ea; border-radius:999px; transition:background .2s ease;}
+  .slider:before{content:""; position:absolute; height:22px; width:22px; left:2px; top:2px; background:#fff; border-radius:50%; transition:transform .2s ease, box-shadow .2s ease;
+                 box-shadow:0 1px 2px rgba(0,0,0,.2), 0 0 0 1px rgba(0,0,0,.04);}
+  .switch input:checked + .slider{background:#34c759;}
+  .switch input:checked + .slider:before{transform:translateX(20px);}
+
+  .results{margin-top:18px;}
+  table{border-collapse:separate; border-spacing:0; width:100%; border:1px solid var(--border); border-radius:12px; overflow:hidden;}
+  thead th{position:sticky; top:0; background:#fff; border-bottom:1px solid var(--border); padding:10px; text-align:left; font-weight:600;}
+  tbody tr.group-header td{background:#f6f6ff; font-weight:600; color:#333; border-top:1px solid var(--border);}
+  tbody td{padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top;}
+  tbody tr.old td{background:var(--old-bg);}
+  tbody tr.new td{background:var(--new-bg);}
+  td.diff{background:var(--diff-bg) !important;}
+  td.label{white-space:nowrap; font-size:12px; color:#333; width:1%;}
+  .badge{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; border:1px solid var(--border);}
+  .key{background:var(--key-badge);}
+  .summary{display:flex; gap:12px; flex-wrap:wrap; font-size:13px; margin-bottom:8px;}
+  .pill{padding:4px 10px; border:1px solid var(--border); border-radius:999px; background:#f9f9f9;}
+  .footer-note{margin-top:10px; font-size:12px; color:var(--muted);}
+  .partdiff{background:var(--diff-part);} /* highlight inside text */
+</style>
+</head>
+<body>
+  <h1>Compare two CSVs by a Primary-Key Column</h1>
+  <div class="row">
+    <div class="block">
+      <label class="caption">File A (older / left)</label>
+      <input type="file" id="fileA" accept=".csv" />
+    </div>
+    <div class="block">
+      <label class="caption">File B (newer / right)</label>
+      <input type="file" id="fileB" accept=".csv" />
+    </div>
+    <div class="block">
+      <label class="caption">Primary key column (1-based)</label>
+      <input type="number" id="pk" min="1" value="2" />
+    </div>
+    <div class="block">
+      <label class="caption">&nbsp;</label>
+      <button id="go">Compare</button>
+    </div>
+  </div>
+
+  <div class="toggles">
+    <div class="toggle-item"><span>Show only rows with differences</span>
+      <label class="switch"><input type="checkbox" id="showOnlyChangedRows"/><span class="slider"></span></label></div>
+    <div class="toggle-item"><span>Show only columns that changed</span>
+      <label class="switch"><input type="checkbox" id="showOnlyChangedCols"/><span class="slider"></span></label></div>
+    <div class="toggle-item"><span>Strict compare (exact match)</span>
+      <label class="switch"><input type="checkbox" id="strictCompare"/><span class="slider"></span></label></div>
+    <div class="toggle-item"><span>Highlight only differing text</span>
+      <label class="switch"><input type="checkbox" id="partialHighlight"/><span class="slider"></span></label></div>
+  </div>
+
+  <div id="meta"></div>
+  <div class="results" id="results"></div>
+
+<script>
+function parseCSV(text){ if (text.charCodeAt(0)===0xFEFF) text=text.slice(1);
+  const rows=[], row=[]; let val='', inQuotes=false;
+  for(let i=0;i<text.length;i++){const c=text[i];
+    if(inQuotes){ if(c==='"'){ if(text[i+1]==='"'){val+='"';i++;} else inQuotes=false; }
+      else val+=c; }
+    else{ if(c==='"') inQuotes=true; else if(c===','){row.push(val);val='';}
+      else if(c==='\n'){row.push(val);rows.push([...row]);row.length=0;val='';}
+      else if(c!=='\r'){val+=c;} } }
+  if(val.length>0||row.length>0){row.push(val);rows.push([...row]);}
+  return rows.filter(r=>!(r.length===1&&r[0].trim()===''));
+}
+function readFileAsText(file){return new Promise((res,rej)=>{const r=new FileReader();r.onerror=()=>rej();r.onload=()=>res(r.result);r.readAsText(file);});}
+function strictNorm(v){return v==null?'':String(v);}
+function smartNorm(v){if(v==null)return '';let s=String(v).trim().replace(/\s+/g,' ');const sNoComma=s.replace(/,/g,'');const n=Number(sNoComma);if(!Number.isNaN(n)&&/^-?\d+(\.\d+)?$/.test(sNoComma))return String(n);return s.toLowerCase();}
+function arraysEqual(a,b,norm){if(a.length!==b.length)return false;for(let i=0;i<a.length;i++){if(norm(a[i])!==norm(b[i]))return false;}return true;}
+function buildIndex(rows, pkIndex){const idx={};for(let i=1;i<rows.length;i++){const r=rows[i];const k=String(r[pkIndex]??'').trim();if(!k)continue;idx[k]=r;}return idx;}
+function genHeaders(len){return Array.from({length:len},(_,i)=>`Col ${i+1}`);}
+
+function summarize(keys, idxA, idxB, norm){
+  let changed=0,same=0,onlyA=0,onlyB=0;
+  keys.forEach(k=>{const a=idxA[k],b=idxB[k];
+    if(a&&b) arraysEqual(a,b,norm)?same++:changed++;
+    else if(a&&!b)onlyA++; else if(!a&&b)onlyB++;});
+  const wrap=document.createElement('div');wrap.className='summary';
+  const mk=(l,v)=>{const s=document.createElement('span');s.className='pill';s.textContent=`${l}: ${v}`;return s;}
+  wrap.append(mk('Keys',keys.length),mk('Unchanged',same),mk('Changed',changed),mk('Only in A',onlyA),mk('Only in B',onlyB));
+  return wrap;
+}
+
+/* highlight only differing substring */
+function diffText(a,b){
+  let prefix=0;while(prefix<a.length&&prefix<b.length&&a[prefix]===b[prefix])prefix++;
+  let suffix=0;while(suffix<a.length-prefix&&suffix<b.length-prefix&&a[a.length-1-suffix]===b[b.length-1-suffix])suffix++;
+  return {
+    a: a.slice(0,prefix)+ (a.length-prefix-suffix>0?`<span class="partdiff">${a.slice(prefix,a.length-suffix)}</span>`:'')+ a.slice(a.length-suffix),
+    b: b.slice(0,prefix)+ (b.length-prefix-suffix>0?`<span class="partdiff">${b.slice(prefix,b.length-suffix)}</span>`:'')+ b.slice(b.length-suffix)
+  };
+}
+
+function makeTable(headers, keys, idxA, idxB, pkIndex, opts){
+  const { norm, showOnlyChangedRows, showOnlyChangedCols, partialHighlight } = opts;
+  const cols=headers.length; const colChangedAnywhere=Array(cols).fill(false);
+  keys.forEach(k=>{const rA=idxA[k],rB=idxB[k];if(!(rA&&rB)){for(let i=0;i<cols;i++)colChangedAnywhere[i]=true;return;}
+    for(let i=0;i<cols;i++){if(norm(rA[i])!==norm(rB[i]))colChangedAnywhere[i]=true;}});
+
+  const table=document.createElement('table');
+  const thead=document.createElement('thead');const trh=document.createElement('tr');
+  const firstTh=document.createElement('th');firstTh.textContent='Row';trh.appendChild(firstTh);
+  headers.forEach((h,i)=>{if(showOnlyChangedCols&&i!==pkIndex&&!colChangedAnywhere[i])return;
+    const th=document.createElement('th');th.textContent=h||`Col ${i+1}`;
+    if(i===pkIndex)th.innerHTML=`${th.textContent} <span class="badge key">PK</span>`;trh.appendChild(th);});
+  thead.appendChild(trh);table.appendChild(thead);
+
+  const tbody=document.createElement('tbody');
+  keys.forEach(key=>{
+    const rA=idxA[key]||null,rB=idxB[key]||null;
+    let rowHasChange=false;for(let i=0;i<cols;i++){const aV=rA?norm(rA[i]):'',bV=rB?norm(rB[i]):'';if(aV!==bV){rowHasChange=true;break;}}
+    if(showOnlyChangedRows&&!rowHasChange)return;
+    const gtr=document.createElement('tr');gtr.className='group-header';
+    const gtd=document.createElement('td');gtd.colSpan=(showOnlyChangedCols?(1+headers.filter((_,i)=>i===pkIndex||colChangedAnywhere[i]).length):(headers.length+1));
+    gtd.innerHTML=`Key: <span class="badge">${key||'(blank)'}</span>${!rA&&rB?' — only in B':rA&&!rB?' — only in A':''}`;gtr.appendChild(gtd);tbody.appendChild(gtr);
+
+    const diffs=Array.from({length:cols},(_,i)=>{const aV=rA?norm(rA[i]):'',bV=rB?norm(rB[i]):'';return aV!==bV;});
+    const pushRow=(row,label,css,otherRow)=>{const tr=document.createElement('tr');tr.className=css;
+      const lab=document.createElement('td');lab.className='label';lab.innerHTML=`<span class="badge">${label}</span>`;tr.appendChild(lab);
+      for(let i=0;i<cols;i++){if(showOnlyChangedCols&&i!==pkIndex&&!colChangedAnywhere[i])continue;
+        const td=document.createElement('td');
+        if(diffs[i]){if(partialHighlight&&row&&otherRow){const d=diffText(String(row[i]??''),String(otherRow[i]??''));td.innerHTML=(label==='A'?d.a:d.b);} else {td.classList.add('diff');td.textContent=row?(row[i]??''):'(missing)';}}
+        else td.textContent=row?(row[i]??''):'(missing)';
+        tr.appendChild(td);}tbody.appendChild(tr);};
+    pushRow(rA,'A','old',rB);pushRow(rB,'B','new',rA);
+  });
+  table.appendChild(tbody);return table;
+}
+
+/* --- UI --- */
+let state={headers:null,pkIndex:null,idxA:null,idxB:null,keys:[],fileAName:'',fileBName:''};
+function renderIfReady(){if(!state.headers)return;out.innerHTML='';
+  const norm=chkStrict.checked?strictNorm:smartNorm;
+  out.appendChild(summarize(state.keys,state.idxA,state.idxB,norm));
+  out.appendChild(makeTable(state.headers,state.keys,state.idxA,state.idxB,state.pkIndex,{
+    norm,showOnlyChangedRows:chkRows.checked,showOnlyChangedCols:chkCols.checked,partialHighlight:chkPartial.checked
+  }));
+  meta.textContent=`Compared "${state.fileAName}" (A) vs "${state.fileBName}" (B) — PK column: ${state.pkIndex+1}`;}
+const out=document.getElementById('results'),meta=document.getElementById('meta');
+const chkRows=document.getElementById('showOnlyChangedRows'),chkCols=document.getElementById('showOnlyChangedCols'),chkStrict=document.getElementById('strictCompare'),chkPartial=document.getElementById('partialHighlight');
+[chkRows,chkCols,chkStrict,chkPartial].forEach(c=>c.addEventListener('change',renderIfReady));
+
+document.getElementById('go').addEventListener('click',async()=>{
+  const aFile=document.getElementById('fileA').files[0],bFile=document.getElementById('fileB').files[0],pkNum=parseInt(document.getElementById('pk').value,10);
+  out.innerHTML='';meta.textContent='';
+  if(!aFile||!bFile){alert('Select both CSV files.');return;}
+  if(!Number.isInteger(pkNum)||pkNum<1){alert('PK must be 1-based.');return;}
+  const [aText,bText]=await Promise.all([readFileAsText(aFile),readFileAsText(bFile)]);
+  let a=parseCSV(aText),b=parseCSV(bText);if(a.length===0||b.length===0){alert('One CSV is empty.');return;}
+  const maxCols=Math.max(a[0].length,b[0].length),pad=r=>{if(r.length<maxCols)r.push(...Array(maxCols-r.length).fill(''));};a.forEach(pad);b.forEach(pad);
+  const headers=(a[0].some(h=>String(h||'').trim()!=='')||b[0].some(h=>String(h||'').trim()!==''))?(a[0].length>=b[0].length?a[0]:b[0]):genHeaders(maxCols);
+  const pkIndex=pkNum-1;if(pkIndex>=headers.length){alert('PK index too large.');return;}
+  const idxA=buildIndex(a,pkIndex),idxB=buildIndex(b,pkIndex);
+  const keys=Array.from(new Set([...Object.keys(idxA),...Object.keys(idxB)])).sort((x,y)=>x.localeCompare(y,undefined,{numeric:true,sensitivity:'base'}));
+  state={headers,pkIndex,idxA,idxB,keys,fileAName:aFile.name||'A',fileBName:bFile.name||'B'};renderIfReady();
+});
+</script>
+
+<div class="footer-note">
+  Yellow = full-cell difference. Pink = only differing substring (if toggle enabled).  
+  Smart compare ignores trivial formatting differences; Strict requires exact match.
+</div>
+</body>
+</html>
