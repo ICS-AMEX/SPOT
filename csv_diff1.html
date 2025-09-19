@@ -1,203 +1,682 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Clarity Comparison Tool</title>
-<style>
-  :root{
-    --diff-bg:#fff59d; /* YELLOW full-cell highlight */
-    --diff-part:#ffb6c1; /* PINK for partial inside text */
-    --old-bg:#fafafa;
-    --new-bg:#ffffff;
-    --border:#e5e5e5;
-    --muted:#666;
-    --key-badge:#ececff;
-  }
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif; line-height:1.45; padding:24px; color:#111;}
-  h1{font-size:18px; margin:0 0 12px;}
-  .row{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px;}
-  .block{display:flex; flex-direction:column; gap:6px;}
-  input[type="file"], input[type="number"]{padding:6px 8px; border:1px solid var(--border); border-radius:8px;}
-  input[type="number"]{width:96px;}
-  button{padding:10px 14px; border:1px solid #111; background:#111; color:#fff; border-radius:10px; cursor:pointer;}
-  button:disabled{opacity:.6; cursor:not-allowed;}
-  label.caption{font-size:12px; color:var(--muted);}
-  #meta{margin-top:8px; font-size:12px; color:var(--muted);}
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CSV Diff Viewer – 2× CSV Compare by Key</title>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root{
+      --pink:#ffd1e8; /* changed cell/substring */
+      --yellow:#fff59d; /* badges */
+      --green:#e6f4ea; /* added row bg */
+      --red:#fde7e9;   /* removed row bg */
+      --ink:#1f2937;
+      --muted:#6b7280;
+      --ring:#e5e7eb;
+      --primary:#0f766e;
+      --bg:#fafafa;
+    }
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    h1{font-size:20px;margin:0 0 8px}
 
-  .toggles{display:flex; gap:24px; flex-wrap:wrap; align-items:center; margin:10px 0 0;}
-  .toggle-item{display:flex; align-items:center; gap:10px; font-size:14px;}
+    /* TOOLBAR – no sticky per feedback */
+    .toolbar{background:#fff;border-bottom:1px solid var(--ring);padding:10px 12px;display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+    .group{border:1px solid var(--ring);border-radius:10px;padding:10px;background:#fff}
+    .group h3{margin:0 0 8px;font-size:13px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    label{font-size:12px;color:var(--muted)}
+    input[type="number"], select, button, .file{border:1px solid var(--ring);border-radius:10px;padding:8px 10px;background:#fff;font:inherit}
+    button{cursor:pointer}
+    button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 
-  /* iOS-style switch */
-  .switch{position:relative; display:inline-block; width:46px; height:26px;}
-  .switch input{opacity:0; width:0; height:0;}
-  .slider{position:absolute; inset:0; background:#e5e5ea; border-radius:999px; transition:background .2s ease;}
-  .slider:before{content:""; position:absolute; height:22px; width:22px; left:2px; top:2px; background:#fff; border-radius:50%; transition:transform .2s ease, box-shadow .2s ease;
-                 box-shadow:0 1px 2px rgba(0,0,0,.2), 0 0 0 1px rgba(0,0,0,.04);}
-  .switch input:checked + .slider{background:#34c759;}
-  .switch input:checked + .slider:before{transform:translateX(20px);}
+    /* LEGEND – not sticky anymore */
+    .legend{background:#fff;border-bottom:1px solid var(--ring);padding:8px 12px;display:flex;gap:12px;align-items:center}
+    .chip{display:inline-flex;align-items:center;gap:6px;background:var(--yellow);padding:2px 8px;border-radius:999px;font-size:12px;color:#111;border:1px solid #e1d67b}
+    .chip.pink{background:var(--pink);border-color:#f6a9c4}
+    .chip.green{background:var(--green);border-color:#c9e7d2}
+    .chip.red{background:var(--red);border-color:#f4b6bc}
 
-  .results{margin-top:18px;}
-  table{border-collapse:separate; border-spacing:0; width:100%; border:1px solid var(--border); border-radius:12px; overflow:hidden;}
-  thead th{position:sticky; top:0; background:#fff; border-bottom:1px solid var(--border); padding:10px; text-align:left; font-weight:600;}
-  tbody tr.group-header td{background:#f6f6ff; font-weight:600; color:#333; border-top:1px solid var(--border);}
-  tbody td{padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top;}
-  tbody tr.old td{background:var(--old-bg);}
-  tbody tr.new td{background:var(--new-bg);}
-  td.diff{background:var(--diff-bg) !important;}
-  td.label{white-space:nowrap; font-size:12px; color:#333; width:1%;}
-  .badge{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; border:1px solid var(--border);}
-  .key{background:var(--key-badge);}
-  .summary{display:flex; gap:12px; flex-wrap:wrap; font-size:13px; margin-bottom:8px;}
-  .pill{padding:4px 10px; border:1px solid var(--border); border-radius:999px; background:#f9f9f9;}
-  .footer-note{margin-top:10px; font-size:12px; color:var(--muted);}
-  .partdiff{background:var(--diff-part);} /* highlight inside text */
-</style>
+    .issues{margin:12px;border:1px dashed #f59e0b;border-radius:10px;padding:10px;background:#fff}
+
+    .results{padding:12px;}
+    .card{border:1px solid var(--ring);border-radius:14px;margin:10px 0;background:#fff;overflow:hidden}
+    .card header{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 12px;background:#f8fafc;border-bottom:1px solid var(--ring)}
+    .key{font-weight:700}
+    .badges{display:flex;flex-wrap:wrap;gap:6px}
+    .body{padding:0}
+
+    /* Scroll wrapper to allow horizontal scroll */
+    .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+    .table{border-collapse:separate;border-spacing:0;table-layout:fixed;width:max-content;min-width:100%}
+    .table th,.table td{border-bottom:1px solid var(--ring);padding:8px 10px;vertical-align:top}
+    .table th{position:sticky; /* sticky within scroll for header visibility */ top:0; background:#fff; z-index:1}
+    .table tr:last-child td{border-bottom:none}
+    .side{white-space:nowrap;color:var(--muted);font-weight:600}
+
+    /* changed styles */
+    .changed{background:var(--pink)}
+    mark.diff{background:var(--pink);padding:0 0.5px}
+    .added-row{background:var(--green)}
+    .removed-row{background:var(--red)}
+
+    /* iPhone style switch */
+    .switch{display:inline-flex;align-items:center;gap:8px}
+    .switch input{position:absolute;opacity:0;width:0;height:0}
+    .slider{position:relative;display:inline-block;width:44px;height:24px;background:#d1d5db;border-radius:999px;transition:.2s}
+    .slider::after{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:.2s}
+    .switch input:checked + .slider{background:#34d399}
+    .switch input:checked + .slider::after{transform:translateX(20px)}
+    .switch label{font-size:12px;color:var(--ink)}
+
+    /* resizer handle in header – wider grip */
+    .resizer{position:absolute;top:0;right:-5px;width:10px;height:100%;cursor:col-resize;user-select:none;touch-action:none}
+    .resizing{user-select:none}
+
+    .toolbar small{color:var(--muted)}
+
+    .pagination{display:flex;gap:8px;align-items:center;padding:8px 12px}
+
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+
+    th:hover .resizer{background:rgba(15,118,110,.15)}
+  </style>
 </head>
 <body>
-  <h1>Clarity Comparison Tool with key column</h1>
-  <div class="row">
-    <div class="block">
-      <label class="caption">File A (older / left)</label>
-      <input type="file" id="fileA" accept=".csv" />
+  <div class="toolbar">
+    <div class="group">
+      <h3>Files</h3>
+      <div class="row">
+        <div>
+          <label>Left / Old CSV</label><br>
+          <input class="file" id="fileA" type="file" accept=".csv" />
+        </div>
+        <div>
+          <label>Right / New CSV</label><br>
+          <input class="file" id="fileB" type="file" accept=".csv" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="demo" type="button">Load demo data</button>
+      </div>
     </div>
-    <div class="block">
-      <label class="caption">File B (newer / right)</label>
-      <input type="file" id="fileB" accept=".csv" />
+
+    <div class="group">
+      <h3>Key</h3>
+      <div class="row">
+        <div>
+          <label>Primary key column index (1-based)</label><br>
+          <input id="pkIndex" type="number" min="1" value="2" style="width:90px" />
+        </div>
+        <div class="switch">
+          <input id="autoID" type="checkbox" checked>
+          <span class="slider" aria-label="Auto-detect ID column"></span>
+          <label for="autoID">Auto-detect key named ID</label>
+        </div>
+      </div>
+      <small id="effectiveKey">Key: —</small>
     </div>
-    <div class="block">
-      <label class="caption">Primary key column index (eg. 1 if Epic id is at 1st index in the CSVs)</label>
-      <input type="number" id="pk" min="1" value="1" />
+
+    <div class="group">
+      <h3>Options</h3>
+      <div class="row">
+        <div class="switch"><input id="onlyChanged" type="checkbox" checked><span class="slider"></span><label for="onlyChanged">Show only changed rows</label></div>
+        <div class="switch"><input id="trim" type="checkbox" checked><span class="slider"></span><label for="trim">Trim whitespace</label></div>
+        <div class="switch"><input id="caseSensitive" type="checkbox"><span class="slider"></span><label for="caseSensitive">Case‑sensitive</label></div>
+        <div class="switch"><input id="substringToggle" type="checkbox" checked><span class="slider"></span><label for="substringToggle">Highlight only differing substring</label></div>
+        <div class="switch"><input id="nullEqual" type="checkbox"><span class="slider"></span><label for="nullEqual">Treat empty & null as equal</label></div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <div>
+          <label>Numeric tolerance</label><br>
+          <input id="tolerance" type="number" step="0.0001" value="0" style="width:110px" />
+        </div>
+        <div>
+          <label>Exclude columns (by header)</label><br>
+          <select id="excludeCols" multiple size="4" style="min-width:220px;max-width:360px"></select>
+        </div>
+      </div>
     </div>
-    <div class="block">
-      <label class="caption">&nbsp;</label>
-      <button id="go">Compare</button>
+
+    <div class="group">
+      <h3>Actions</h3>
+      <div class="row">
+        <button id="compare" class="primary" type="button">Compare</button>
+        <button id="reset" type="button">Reset</button>
+        <button id="downloadCsv" type="button">Download differences as CSV</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <label>Page size</label>
+        <input id="pageSize" type="number" min="50" value="200" style="width:90px" />
+      </div>
     </div>
   </div>
 
-  <div class="toggles">
-    <div class="toggle-item"><span>Show only rows with differences</span>
-      <label class="switch"><input type="checkbox" id="showOnlyChangedRows"/><span class="slider"></span></label></div>
-    <div class="toggle-item"><span>Show only columns that changed</span>
-      <label class="switch"><input type="checkbox" id="showOnlyChangedCols"/><span class="slider"></span></label></div>
-    <div class="toggle-item"><span>Strict compare (exact match)</span>
-      <label class="switch"><input type="checkbox" id="strictCompare"/><span class="slider"></span></label></div>
-    <div class="toggle-item"><span>Highlight only differing text</span>
-      <label class="switch"><input type="checkbox" id="partialHighlight"/><span class="slider"></span></label></div>
+  <div class="legend">
+    <span class="chip pink">Pink = changed</span>
+    <span class="chip">Yellow badges = columns changed for this key</span>
+    <span class="chip green">New row</span>
+    <span class="chip red">Removed row</span>
   </div>
 
-  <div id="meta"></div>
-  <div class="results" id="results"></div>
+  <div id="issues" class="issues" style="display:none"></div>
 
-<script>
-function parseCSV(text){ if (text.charCodeAt(0)===0xFEFF) text=text.slice(1);
-  const rows=[], row=[]; let val='', inQuotes=false;
-  for(let i=0;i<text.length;i++){const c=text[i];
-    if(inQuotes){ if(c==='"'){ if(text[i+1]==='"'){val+='"';i++;} else inQuotes=false; }
-      else val+=c; }
-    else{ if(c==='"') inQuotes=true; else if(c===','){row.push(val);val='';}
-      else if(c==='\n'){row.push(val);rows.push([...row]);row.length=0;val='';}
-      else if(c!=='\r'){val+=c;} } }
-  if(val.length>0||row.length>0){row.push(val);rows.push([...row]);}
-  return rows.filter(r=>!(r.length===1&&r[0].trim()===''));
-}
-function readFileAsText(file){return new Promise((res,rej)=>{const r=new FileReader();r.onerror=()=>rej();r.onload=()=>res(r.result);r.readAsText(file);});}
-function strictNorm(v){return v==null?'':String(v);}
-function smartNorm(v){if(v==null)return '';let s=String(v).trim().replace(/\s+/g,' ');const sNoComma=s.replace(/,/g,'');const n=Number(sNoComma);if(!Number.isNaN(n)&&/^-?\d+(\.\d+)?$/.test(sNoComma))return String(n);return s.toLowerCase();}
-function arraysEqual(a,b,norm){if(a.length!==b.length)return false;for(let i=0;i<a.length;i++){if(norm(a[i])!==norm(b[i]))return false;}return true;}
-function buildIndex(rows, pkIndex){const idx={};for(let i=1;i<rows.length;i++){const r=rows[i];const k=String(r[pkIndex]??'').trim();if(!k)continue;idx[k]=r;}return idx;}
-function genHeaders(len){return Array.from({length:len},(_,i)=>`Col ${i+1}`);}
+  <div id="pagination" class="pagination" style="display:none">
+    <button id="prev" type="button">◀ Prev</button>
+    <div><span id="pageInfo">Page 1/1</span></div>
+    <button id="next" type="button">Next ▶</button>
+  </div>
 
-function summarize(keys, idxA, idxB, norm){
-  let changed=0,same=0,onlyA=0,onlyB=0;
-  keys.forEach(k=>{const a=idxA[k],b=idxB[k];
-    if(a&&b) arraysEqual(a,b,norm)?same++:changed++;
-    else if(a&&!b)onlyA++; else if(!a&&b)onlyB++;});
-  const wrap=document.createElement('div');wrap.className='summary';
-  const mk=(l,v)=>{const s=document.createElement('span');s.className='pill';s.textContent=`${l}: ${v}`;return s;}
-  wrap.append(mk('Keys',keys.length),mk('Unchanged',same),mk('Changed',changed),mk('Only in A',onlyA),mk('Only in B',onlyB));
-  return wrap;
-}
+  <div id="results" class="results"></div>
 
-/* highlight only differing substring */
-function diffText(a,b){
-  let prefix=0;while(prefix<a.length&&prefix<b.length&&a[prefix]===b[prefix])prefix++;
-  let suffix=0;while(suffix<a.length-prefix&&suffix<b.length-prefix&&a[a.length-1-suffix]===b[b.length-1-suffix])suffix++;
-  return {
-    a: a.slice(0,prefix)+ (a.length-prefix-suffix>0?`<span class="partdiff">${a.slice(prefix,a.length-suffix)}</span>`:'')+ a.slice(a.length-suffix),
-    b: b.slice(0,prefix)+ (b.length-prefix-suffix>0?`<span class="partdiff">${b.slice(prefix,b.length-suffix)}</span>`:'')+ b.slice(b.length-suffix)
+  <script>
+  // ---------- State ----------
+  let dataA = null; // {headers:[], rows:[[]]}
+  let dataB = null;
+  let headers = [];
+  let lastHeadersKey = '';
+  let columnWidths = []; // px widths shared across tables
+  let diffEntries = []; // per key result objects for current compare
+  let filteredKeys = []; // keys after filters/toggles
+  let curPage = 1;
+
+  const els = {
+    fileA: document.getElementById('fileA'),
+    fileB: document.getElementById('fileB'),
+    demo: document.getElementById('demo'),
+    pkIndex: document.getElementById('pkIndex'),
+    autoID: document.getElementById('autoID'),
+    effectiveKey: document.getElementById('effectiveKey'),
+    onlyChanged: document.getElementById('onlyChanged'),
+    trim: document.getElementById('trim'),
+    caseSensitive: document.getElementById('caseSensitive'),
+    substringToggle: document.getElementById('substringToggle'),
+    nullEqual: document.getElementById('nullEqual'),
+    tolerance: document.getElementById('tolerance'),
+    excludeCols: document.getElementById('excludeCols'),
+    compare: document.getElementById('compare'),
+    reset: document.getElementById('reset'),
+    downloadCsv: document.getElementById('downloadCsv'),
+    issues: document.getElementById('issues'),
+    results: document.getElementById('results'),
+    pagination: document.getElementById('pagination'),
+    prev: document.getElementById('prev'),
+    next: document.getElementById('next'),
+    pageInfo: document.getElementById('pageInfo'),
+    pageSize: document.getElementById('pageSize'),
   };
-}
 
-function makeTable(headers, keys, idxA, idxB, pkIndex, opts){
-  const { norm, showOnlyChangedRows, showOnlyChangedCols, partialHighlight } = opts;
-  const cols=headers.length; const colChangedAnywhere=Array(cols).fill(false);
-  keys.forEach(k=>{const rA=idxA[k],rB=idxB[k];if(!(rA&&rB)){for(let i=0;i<cols;i++)colChangedAnywhere[i]=true;return;}
-    for(let i=0;i<cols;i++){if(norm(rA[i])!==norm(rB[i]))colChangedAnywhere[i]=true;}});
+  // ---------- Helpers ----------
+  function readFile(file){
+    return new Promise((resolve, reject)=>{
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: 'greedy',
+        complete: results => resolve(results),
+        error: err => reject(err)
+      });
+    });
+  }
 
-  const table=document.createElement('table');
-  const thead=document.createElement('thead');const trh=document.createElement('tr');
-  const firstTh=document.createElement('th');firstTh.textContent='Row';trh.appendChild(firstTh);
-  headers.forEach((h,i)=>{if(showOnlyChangedCols&&i!==pkIndex&&!colChangedAnywhere[i])return;
-    const th=document.createElement('th');th.textContent=h||`Col ${i+1}`;
-    if(i===pkIndex)th.innerHTML=`${th.textContent} <span class="badge key">PK</span>`;trh.appendChild(th);});
-  thead.appendChild(trh);table.appendChild(thead);
+  function parseCsvString(str){
+    return Papa.parse(str, {header:true, skipEmptyLines:'greedy'});
+  }
 
-  const tbody=document.createElement('tbody');
-  keys.forEach(key=>{
-    const rA=idxA[key]||null,rB=idxB[key]||null;
-    let rowHasChange=false;for(let i=0;i<cols;i++){const aV=rA?norm(rA[i]):'',bV=rB?norm(rB[i]):'';if(aV!==bV){rowHasChange=true;break;}}
-    if(showOnlyChangedRows&&!rowHasChange)return;
-    const gtr=document.createElement('tr');gtr.className='group-header';
-    const gtd=document.createElement('td');gtd.colSpan=(showOnlyChangedCols?(1+headers.filter((_,i)=>i===pkIndex||colChangedAnywhere[i]).length):(headers.length+1));
-    gtd.innerHTML=`Key: <span class="badge">${key||'(blank)'}</span>${!rA&&rB?' — only in B':rA&&!rB?' — only in A':''}`;gtr.appendChild(gtd);tbody.appendChild(gtr);
+  function normalizeRows(parsed){
+    const headers = parsed.meta.fields || Object.keys(parsed.data?.[0]||{});
+    const rows = (parsed.data||[]).map(obj => headers.map(h => obj[h] ?? ''));
+    return {headers, rows};
+  }
 
-    const diffs=Array.from({length:cols},(_,i)=>{const aV=rA?norm(rA[i]):'',bV=rB?norm(rB[i]):'';return aV!==bV;});
-    const pushRow=(row,label,css,otherRow)=>{const tr=document.createElement('tr');tr.className=css;
-      const lab=document.createElement('td');lab.className='label';lab.innerHTML=`<span class="badge">${label}</span>`;tr.appendChild(lab);
-      for(let i=0;i<cols;i++){if(showOnlyChangedCols&&i!==pkIndex&&!colChangedAnywhere[i])continue;
-        const td=document.createElement('td');
-        if(diffs[i]){if(partialHighlight&&row&&otherRow){const d=diffText(String(row[i]??''),String(otherRow[i]??''));td.innerHTML=(label==='A'?d.a:d.b);} else {td.classList.add('diff');td.textContent=row?(row[i]??''):'(missing)';}}
-        else td.textContent=row?(row[i]??''):'(missing)';
-        tr.appendChild(td);}tbody.appendChild(tr);};
-    pushRow(rA,'A','old',rB);pushRow(rB,'B','new',rA);
+  function isNumeric(v){
+    if (v === null || v === undefined || v === '') return false;
+    const n = Number(v);
+    return Number.isFinite(n);
+  }
+
+  function preprocess(val){
+    let v = val == null ? '' : String(val);
+    if (els.trim.checked) v = v.trim();
+    if (!els.caseSensitive.checked) v = v.toLowerCase();
+    return v;
+  }
+
+  function valuesEqual(a,b){
+    // Treat empty & null equal
+    if (els.nullEqual.checked){
+      const emptyA = (a==null || a==='');
+      const emptyB = (b==null || b==='');
+      if (emptyA && emptyB) return true;
+    }
+    // numeric tolerance
+    const tol = Number(els.tolerance.value||0);
+    if (tol>0 && isNumeric(a) && isNumeric(b)){
+      return Math.abs(Number(a)-Number(b)) <= tol;
+    }
+    return preprocess(a) === preprocess(b);
+  }
+
+  // substring diff: return [ {start,end} ] spans for string a that differ vs string b
+  function diffSegments(a, b){
+    a = String(a==null? '': a);
+    b = String(b==null? '': b);
+    if (a === b) return [];
+    let p = 0; const len = Math.min(a.length, b.length);
+    while (p < len && a[p] === b[p]) p++;
+    let s = 0;
+    while (s < (len - p) && a[a.length - 1 - s] === b[b.length - 1 - s]) s++;
+    const start = p; const endA = a.length - s;
+    if (start >= endA) return [];
+    return [{start, end:endA}];
+  }
+
+  function wrapDiffHTML(text, segments){
+    const s = String(text==null? '': text);
+    if (!segments.length) return escapeHtml(s);
+    let out = ''; let cursor = 0;
+    for (const seg of segments){
+      if (cursor < seg.start) out += escapeHtml(s.slice(cursor, seg.start));
+      out += '<mark class="diff">' + escapeHtml(s.slice(seg.start, seg.end)) + '</mark>';
+      cursor = seg.end;
+    }
+    if (cursor < s.length) out += escapeHtml(s.slice(cursor));
+    return out;
+  }
+
+  function escapeHtml(x){
+    return String(x)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/\"/g,'&quot;')
+      .replace(/'/g,'&#39;');
+  }
+
+  function computeEffectiveKey(headersA, headersB){
+    if (els.autoID.checked){
+      const idxA = headersA.findIndex(h => String(h).trim().toLowerCase() === 'id');
+      const idxB = headersB.findIndex(h => String(h).trim().toLowerCase() === 'id');
+      if (idxA !== -1 && idxB !== -1 && idxA === idxB){
+        els.effectiveKey.textContent = `Key: ID (column ${idxA+1})`;
+        return idxA;
+      }
+    }
+    const manual = Math.max(1, Number(els.pkIndex.value||1)) - 1;
+    els.effectiveKey.textContent = `Key: column ${manual+1}`;
+    return manual;
+  }
+
+  function buildIndex(rows, keyIdx){
+    const map = new Map();
+    const dupes = [];
+    rows.forEach((r,i)=>{
+      const k = r[keyIdx];
+      if (map.has(k)) dupes.push({key:k, row:i});
+      else map.set(k, r);
+    });
+    return {map, dupes};
+  }
+
+  function collectHeaders(){
+    if (!dataA || !dataB) return [];
+    const A = dataA.headers.slice();
+    const B = dataB.headers.slice();
+    if (A.length !== B.length){
+      console.warn('Header length mismatch; proceeding by index');
+    }
+    return A.length ? A : B;
+  }
+
+  function populateExclude(headers){
+    const prev = new Set(getExcludedIdx());
+    const newKey = JSON.stringify(headers);
+    if (lastHeadersKey === newKey && els.excludeCols.options.length){
+      return; // don't wipe selections if headers unchanged
+    }
+    lastHeadersKey = newKey;
+    els.excludeCols.innerHTML = '';
+    headers.forEach((h,idx)=>{
+      const opt = document.createElement('option');
+      opt.value = String(idx);
+      opt.textContent = h;
+      if (prev.has(idx)) opt.selected = true;
+      els.excludeCols.appendChild(opt);
+    });
+  }
+
+  function getExcludedIdx(){
+    return Array.from(els.excludeCols.selectedOptions).map(o=>Number(o.value));
+  }
+
+  // ---------- Core Compare ----------
+  async function runCompare(){
+    if (!dataA || !dataB){
+      alert('Please load both CSVs (or click "Load demo data").');
+      return;
+    }
+    headers = collectHeaders();
+    if (!headers.length){
+      alert('No headers detected. Ensure both CSVs have a header row.');
+      return;
+    }
+    populateExclude(headers);
+
+    const keyIdx = computeEffectiveKey(dataA.headers, dataB.headers);
+    const ex = new Set(getExcludedIdx());
+
+    const {map: mapA, dupes: dupA} = buildIndex(dataA.rows, keyIdx);
+    const {map: mapB, dupes: dupB} = buildIndex(dataB.rows, keyIdx);
+
+    const issues = [];
+    if (dupA.length) issues.push(`Left/Old has ${dupA.length} duplicate keys.`);
+    if (dupB.length) issues.push(`Right/New has ${dupB.length} duplicate keys.`);
+    if (dataA.headers.length !== dataB.headers.length){
+      issues.push('Header count differs between files. Comparing by column index.');
+    }
+
+    els.issues.style.display = issues.length ? 'block' : 'none';
+    els.issues.innerHTML = issues.length ? ('<b>Issues</b><ul>' + issues.map(x=>`<li>${escapeHtml(x)}</li>`).join('') + '</ul>') : '';
+
+    const allKeys = new Set([...mapA.keys(), ...mapB.keys()]);
+
+    diffEntries = [];
+
+    for (const key of allKeys){
+      const rowA = mapA.get(key) || null;
+      const rowB = mapB.get(key) || null;
+      const entry = { key, type: 'both', changedCols: [], changedNames: [], cells: [], rowA, rowB };
+
+      if (rowA && rowB){
+        headers.forEach((h,idx)=>{
+          const a = rowA[idx] ?? '';
+          const b = rowB[idx] ?? '';
+          const excluded = ex.has(idx);
+          let equal = excluded ? true : valuesEqual(a,b);
+          let segA = [], segB = [];
+          if (!equal && els.substringToggle.checked){
+            segA = diffSegments(a,b);
+            segB = diffSegments(b,a);
+          }
+          if (!equal && !excluded){
+            entry.changedCols.push(idx);
+            entry.changedNames.push(headers[idx] ?? `Col ${idx+1}`);
+          }
+          entry.cells.push({a,b,equal,segA,segB,excluded});
+        });
+      } else if (rowB && !rowA){
+        entry.type = 'added';
+      } else if (rowA && !rowB){
+        entry.type = 'removed';
+      }
+      diffEntries.push(entry);
+    }
+
+    applyFiltersAndRender();
+  }
+
+  function applyFiltersAndRender(){
+    const onlyChanged = els.onlyChanged.checked;
+
+    let list = diffEntries;
+    if (onlyChanged){
+      list = list.filter(e => e.type !== 'both' ? true : e.changedCols.length > 0);
+    }
+
+    filteredKeys = list;
+    curPage = 1;
+    renderPage();
+  }
+
+  function renderPage(){
+    const size = Math.max(50, Number(els.pageSize.value||200));
+    const pages = Math.max(1, Math.ceil(filteredKeys.length / size));
+    curPage = Math.min(curPage, pages);
+    const start = (curPage-1)*size;
+    const slice = filteredKeys.slice(start, start+size);
+
+    els.pagination.style.display = pages>1 ? 'flex' : 'none';
+    els.pageInfo.textContent = `Page ${curPage}/${pages} — showing ${slice.length} of ${filteredKeys.length}`;
+
+    const frag = document.createDocumentFragment();
+    slice.forEach(entry => frag.appendChild(renderCard(entry)));
+    els.results.innerHTML = '';
+    els.results.appendChild(frag);
+
+    if (!columnWidths.length){
+      columnWidths = new Array(headers.length).fill(0);
+      const ths = els.results.querySelectorAll('table thead th[data-col]');
+      ths.forEach(th=>{
+        const idx = Number(th.dataset.col);
+        columnWidths[idx] = Math.max(140, th.getBoundingClientRect().width);
+      });
+    }
+    applyColumnWidths();
+  }
+
+  function renderCard(entry){
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const header = document.createElement('header');
+    header.innerHTML = `<div class="key mono">${escapeHtml(entry.key)}</div>`;
+
+    const badges = document.createElement('div');
+    badges.className = 'badges';
+    if (entry.type === 'added'){
+      const b = document.createElement('span'); b.className='chip green'; b.textContent = 'New row'; badges.appendChild(b);
+    } else if (entry.type === 'removed'){
+      const b = document.createElement('span'); b.className='chip red'; b.textContent = 'Removed row'; badges.appendChild(b);
+    } else if (entry.changedNames.length){
+      entry.changedNames.forEach(name=>{ const b = document.createElement('span'); b.className='chip'; b.textContent = name; badges.appendChild(b); });
+    }
+    header.appendChild(badges);
+
+    const body = document.createElement('div');
+    body.className = 'body';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap';
+
+    const table = document.createElement('table');
+    table.className = 'table';
+
+    const cg = document.createElement('colgroup');
+    headers.forEach((_,idx)=>{ const col = document.createElement('col'); col.setAttribute('data-col', String(idx)); cg.appendChild(col); });
+    table.appendChild(cg);
+
+    const thead = document.createElement('thead');
+    const thr = document.createElement('tr');
+    headers.forEach((h,idx)=>{
+      const th = document.createElement('th');
+      th.textContent = h;
+      th.setAttribute('data-col', String(idx));
+      const grip = document.createElement('div');
+      grip.className = 'resizer';
+      grip.addEventListener('mousedown', e=> startResize(e, idx));
+      grip.addEventListener('touchstart', e=> startResize(e.changedTouches[0], idx));
+      th.appendChild(grip);
+      thr.appendChild(th);
+    });
+    thead.appendChild(thr); table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+
+    if (entry.type === 'both'){
+      const trA = document.createElement('tr');
+      entry.cells.forEach((cell,idx)=>{
+        const td = document.createElement('td');
+        if (!cell.equal){
+          if (els.substringToggle.checked){ td.innerHTML = wrapDiffHTML(cell.a, cell.segA); }
+          else { td.classList.add('changed'); td.textContent = cell.a ?? ''; }
+        } else { td.textContent = cell.a ?? ''; }
+        td.setAttribute('data-col', String(idx));
+        trA.appendChild(td);
+      });
+
+      const trB = document.createElement('tr');
+      entry.cells.forEach((cell,idx)=>{
+        const td = document.createElement('td');
+        if (!cell.equal){
+          if (els.substringToggle.checked){ td.innerHTML = wrapDiffHTML(cell.b, cell.segB); }
+          else { td.classList.add('changed'); td.textContent = cell.b ?? ''; }
+        } else { td.textContent = cell.b ?? ''; }
+        td.setAttribute('data-col', String(idx));
+        trB.appendChild(td);
+      });
+
+      tbody.appendChild(trA); tbody.appendChild(trB);
+
+    } else if (entry.type === 'added'){
+      const trB = document.createElement('tr'); trB.className='added-row';
+      headers.forEach((_,idx)=>{ const td = document.createElement('td'); td.textContent = entry.rowB[idx] ?? ''; td.setAttribute('data-col', String(idx)); trB.appendChild(td); });
+      tbody.appendChild(trB);
+    } else if (entry.type === 'removed'){
+      const trA = document.createElement('tr'); trA.className='removed-row';
+      headers.forEach((_,idx)=>{ const td = document.createElement('td'); td.textContent = entry.rowA[idx] ?? ''; td.setAttribute('data-col', String(idx)); trA.appendChild(td); });
+      tbody.appendChild(trA);
+    }
+
+    table.appendChild(tbody);
+
+    wrap.appendChild(table);
+    body.appendChild(wrap);
+    card.appendChild(header);
+    card.appendChild(body);
+    return card;
+  }
+
+  function applyColumnWidths(){
+    document.querySelectorAll('col[data-col]').forEach(col=>{
+      const idx = Number(col.getAttribute('data-col'));
+      const w = columnWidths[idx] || 140;
+      col.style.width = w + 'px';
+    });
+  }
+
+  // ----- Column resizing (shared widths) -----
+  let resizeState = null;
+  function startResize(e, idx){
+    document.body.classList.add('resizing');
+    const startX = e.clientX;
+    const startW = columnWidths[idx] || 140;
+    resizeState = {idx, startX, startW};
+    window.addEventListener('mousemove', onResizing);
+    window.addEventListener('mouseup', endResize);
+    window.addEventListener('touchmove', onResizingTouch, {passive:false});
+    window.addEventListener('touchend', endResize);
+  }
+  function onResizing(e){
+    if (!resizeState) return;
+    const dx = e.clientX - resizeState.startX;
+    columnWidths[resizeState.idx] = Math.max(80, resizeState.startW + dx);
+    applyColumnWidths();
+  }
+  function onResizingTouch(e){
+    if (!resizeState) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - resizeState.startX;
+    columnWidths[resizeState.idx] = Math.max(80, resizeState.startW + dx);
+    applyColumnWidths();
+  }
+  function endResize(){
+    document.body.classList.remove('resizing');
+    window.removeEventListener('mousemove', onResizing);
+    window.removeEventListener('mouseup', endResize);
+    window.removeEventListener('touchmove', onResizingTouch);
+    window.removeEventListener('touchend', endResize);
+    resizeState = null;
+  }
+
+  // ---------- Download differences CSV ----------
+  function downloadDiffCsv(){
+    if (!diffEntries.length){ alert('Run Compare first.'); return; }
+    const rows = [['key','column_name','old_value','new_value','change_type']];
+    for (const e of diffEntries){
+      if (e.type === 'both'){
+        e.cells.forEach((c,idx)=>{
+          if (!c.equal){
+            rows.push([String(e.key), headers[idx]||`Col ${idx+1}`, String(c.a??''), String(c.b??''), 'modified']);
+          }
+        });
+      } else if (e.type === 'added'){
+        rows.push([String(e.key), '', '', '', 'added_row']);
+      } else if (e.type === 'removed'){
+        rows.push([String(e.key), '', '', '', 'removed_row']);
+      }
+    }
+    const csv = rows.map(r=> r.map(v=> '"'+String(v).replace(/"/g,'""')+'"').join(',')).join('
+');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'differences.csv'; document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // ---------- Demo Data ----------
+  const demoA = `ID,Name,Status,Price,Notes
+1001,Widget A,Active,120,Blue version
+1002,Widget B,Active,199,Intro offer
+1003,Widget C,Paused,250,Discontinued soon
+1004,Gadget X,Active,75,`;
+  const demoB = `ID,Name,Status,Price,Notes
+1001,Widget A,Active,129,Blue version v2
+1002,Widget B,Paused,199,Intro offer
+1003,Widget C,Paused,245,Discontinued soon!
+1005,Gadget Y,Active,89,New arrival`;
+
+  async function loadDemo(){
+    const pA = parseCsvString(demoA);
+    const pB = parseCsvString(demoB);
+    dataA = normalizeRows(pA);
+    dataB = normalizeRows(pB);
+    headers = collectHeaders();
+    populateExclude(headers);
+    computeEffectiveKey(dataA.headers, dataB.headers);
+    await runCompare();
+  }
+
+  // ---------- Wire up ----------
+  els.demo.addEventListener('click', loadDemo);
+  els.compare.addEventListener('click', runCompare);
+  els.onlyChanged.addEventListener('change', applyFiltersAndRender);
+  els.excludeCols.addEventListener('change', ()=>{ if (dataA && dataB) runCompare(); });
+  els.pageSize.addEventListener('change', renderPage);
+  els.prev.addEventListener('click', ()=>{ if (curPage>1){ curPage--; renderPage(); }});
+  els.next.addEventListener('click', ()=>{ const pages=Math.ceil(filteredKeys.length/Math.max(50, Number(els.pageSize.value||200))); if (curPage<pages){ curPage++; renderPage(); }});
+  els.downloadCsv.addEventListener('click', downloadDiffCsv);
+  els.reset.addEventListener('click', ()=>{ window.location.reload(); });
+
+  els.fileA.addEventListener('change', async (e)=>{
+    if (!e.target.files?.[0]) return;
+    const parsed = await readFile(e.target.files[0]);
+    dataA = normalizeRows(parsed);
+    headers = collectHeaders();
+    populateExclude(headers);
+    computeEffectiveKey(dataA.headers, dataB?dataB.headers:dataA.headers);
   });
-  table.appendChild(tbody);return table;
-}
 
-/* --- UI --- */
-let state={headers:null,pkIndex:null,idxA:null,idxB:null,keys:[],fileAName:'',fileBName:''};
-function renderIfReady(){if(!state.headers)return;out.innerHTML='';
-  const norm=chkStrict.checked?strictNorm:smartNorm;
-  out.appendChild(summarize(state.keys,state.idxA,state.idxB,norm));
-  out.appendChild(makeTable(state.headers,state.keys,state.idxA,state.idxB,state.pkIndex,{
-    norm,showOnlyChangedRows:chkRows.checked,showOnlyChangedCols:chkCols.checked,partialHighlight:chkPartial.checked
-  }));
-  meta.textContent=`Compared "${state.fileAName}" (A) vs "${state.fileBName}" (B) — PK column: ${state.pkIndex+1}`;}
-const out=document.getElementById('results'),meta=document.getElementById('meta');
-const chkRows=document.getElementById('showOnlyChangedRows'),chkCols=document.getElementById('showOnlyChangedCols'),chkStrict=document.getElementById('strictCompare'),chkPartial=document.getElementById('partialHighlight');
-[chkRows,chkCols,chkStrict,chkPartial].forEach(c=>c.addEventListener('change',renderIfReady));
+  els.fileB.addEventListener('change', async (e)=>{
+    if (!e.target.files?.[0]) return;
+    const parsed = await readFile(e.target.files[0]);
+    dataB = normalizeRows(parsed);
+    headers = collectHeaders();
+    populateExclude(headers);
+    computeEffectiveKey(dataA?dataA.headers:dataB.headers, dataB.headers);
+  });
 
-document.getElementById('go').addEventListener('click',async()=>{
-  const aFile=document.getElementById('fileA').files[0],bFile=document.getElementById('fileB').files[0],pkNum=parseInt(document.getElementById('pk').value,10);
-  out.innerHTML='';meta.textContent='';
-  if(!aFile||!bFile){alert('Select both CSV files.');return;}
-  if(!Number.isInteger(pkNum)||pkNum<1){alert('PK must be 1-based.');return;}
-  const [aText,bText]=await Promise.all([readFileAsText(aFile),readFileAsText(bFile)]);
-  let a=parseCSV(aText),b=parseCSV(bText);if(a.length===0||b.length===0){alert('One CSV is empty.');return;}
-  const maxCols=Math.max(a[0].length,b[0].length),pad=r=>{if(r.length<maxCols)r.push(...Array(maxCols-r.length).fill(''));};a.forEach(pad);b.forEach(pad);
-  const headers=(a[0].some(h=>String(h||'').trim()!=='')||b[0].some(h=>String(h||'').trim()!==''))?(a[0].length>=b[0].length?a[0]:b[0]):genHeaders(maxCols);
-  const pkIndex=pkNum-1;if(pkIndex>=headers.length){alert('PK index too large.');return;}
-  const idxA=buildIndex(a,pkIndex),idxB=buildIndex(b,pkIndex);
-  const keys=Array.from(new Set([...Object.keys(idxA),...Object.keys(idxB)])).sort((x,y)=>x.localeCompare(y,undefined,{numeric:true,sensitivity:'base'}));
-  state={headers,pkIndex,idxA,idxB,keys,fileAName:aFile.name||'A',fileBName:bFile.name||'B'};renderIfReady();
-});
-</script>
+  [els.trim, els.caseSensitive, els.substringToggle, els.nullEqual, els.tolerance, els.pkIndex, els.autoID].forEach(el=>{
+    el.addEventListener('change', ()=>{ if (dataA && dataB){ runCompare(); }});
+  });
 
-<div class="footer-note">
-  Yellow = full-cell difference. Pink = only differing substring (if toggle enabled).  
-  Smart compare ignores trivial formatting differences; Strict requires exact match. For additional features Slack: @pseth25
-</div>
+  function __testDiffSpans(){
+    const tests = [ ['hello world','hello brave world'], ['Price: 120','Price: 129'], ['Same','Same'], ['','nonempty'], ['prefixXsuffix','prefixYsuffix'] ];
+    return tests.map(([a,b])=>({a,b,spansA:diffSegments(a,b),spansB:diffSegments(b,a)}));
+  }
+  window.__testDiffSpans = __testDiffSpans;
 
+  els.effectiveKey.textContent = 'Key: — (load CSVs or demo)';
+  </script>
 </body>
 </html>
