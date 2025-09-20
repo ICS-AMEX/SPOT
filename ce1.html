@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CSV Diff — Old vs New</title>
+
+<!-- Papa Parse (robust CSV parsing). App gracefully falls back if CDN fails. -->
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" defer></script>
+
+<style>
+  :root{
+    --bg:#fafafa;
+    --card:#ffffff;
+    --ink:#222;
+    --muted:#666;
+    --line:#e6e6e6;
+    --pink:#ffd1e8;
+    --yellow:#fff59d;
+    --light-green:#eaffea;
+    --light-red:#ffeaea;
+    --accent:#0057ff;
+    --col-gap:8px;
+
+    /* Column width variables (set dynamically) */
+    /* We’ll fill --col-w-0, --col-w-1, ... in JS once headers are known */
+  }
+
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  /* Sticky toolbar */
+  .toolbar{
+    position: sticky; top: 0; z-index: 40;
+    background: var(--card); border-bottom:1px solid var(--line);
+    padding: 12px 16px;
+  }
+
+  .toolbar h1{
+    margin:0 0 8px; font-size:18px; font-weight:700;
+  }
+
+  .row{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end}
+  .group{display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap}
+  .field{display:flex; flex-direction:column; gap:6px}
+
+  label{font-weight:600; font-size:12px}
+  input[type="file"], select, input[type="number"], button, .multiselect{
+    font: inherit; padding:8px; border:1px solid var(--line); border-radius:8px; background:#fff;
+  }
+  input[type="number"]{width:110px}
+
+  button{
+    cursor:pointer; background:var(--accent); color:#fff; border:none; padding:10px 14px; border-radius:10px;
+  }
+  button.secondary{ background:#f3f3f3; color:#111; border:1px solid var(--line) }
+  button.ghost{ background:transparent; color:var(--ink); border:1px dashed var(--line) }
+  button:disabled{opacity:.6; cursor:not-allowed}
+
+  /* iPhone-style switch */
+  .switch{
+    position:relative; display:inline-flex; align-items:center; gap:8px; user-select:none;
+  }
+  .switch input{display:none}
+  .slider{
+    width:44px; height:24px; background:#ddd; border-radius:24px; position:relative; transition:background .2s;
+  }
+  .slider::after{
+    content:""; width:20px; height:20px; background:#fff; border-radius:50%; position:absolute; top:2px; left:2px; transition:left .2s, box-shadow .2s;
+    box-shadow:0 1px 3px rgba(0,0,0,.25);
+  }
+  .switch input:checked + .slider{background:#4cd964}
+  .switch input:checked + .slider::after{left:22px}
+  .switch .label{font-size:13px}
+
+  .subtle{
+    color:var(--muted); font-size:12px;
+  }
+
+  /* Legend */
+  .legend{
+    position: sticky; top: 72px; /* sits below toolbar; adjust if toolbar grows */
+    z-index: 30; background:var(--bg); border-bottom:1px solid var(--line);
+    padding:8px 16px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  }
+  .chip{display:inline-flex; align-items:center; gap:8px; background:#fff; border:1px solid var(--line); padding:6px 10px; border-radius:999px; font-size:12px}
+  .swatch{width:16px; height:12px; border-radius:3px; border:1px solid var(--line)}
+  .swatch.pink{background:var(--pink)}
+  .swatch.yellow{background:var(--yellow)}
+  .swatch.green{background:var(--light-green)}
+  .swatch.red{background:var(--light-red)}
+
+  /* Summaries */
+  .panel{
+    margin:12px 16px; padding:12px; background:var(--card); border:1px solid var(--line); border-radius:12px;
+  }
+  .panel h3{margin:0 0 8px; font-size:14px}
+  .panel .grid{display:grid; gap:8px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));}
+  .kpi{background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px}
+  .kpi .k{font-size:12px; color:var(--muted)}
+  .kpi .v{font-size:16px; font-weight:700}
+
+  /* Column Ruler (resizable header) */
+  .ruler-wrap{
+    margin:12px 16px; overflow:auto; border:1px solid var(--line); border-radius:12px; background:#fff;
+  }
+  .ruler{
+    table-layout:fixed; border-collapse:separate; border-spacing:0; min-width:800px; width:max-content
+  }
+  .ruler th{
+    position:relative; text-align:left; font-weight:600; padding:10px; border-right:1px solid var(--line);
+    background:#fbfbfb; white-space:nowrap;
+  }
+  .ruler th .title{display:inline-block; pointer-events:none}
+  .resizer{
+    position:absolute; right:-3px; top:0; width:6px; height:100%; cursor:col-resize; user-select:none;
+  }
+  .resizer:focus{outline:2px solid var(--accent)}
+
+  /* Results */
+  #results{
+    margin:12px 16px; display:flex; flex-direction:column; gap:10px;
+  }
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden;
+  }
+  .card.added{border-color:#b3e6b3; background:var(--light-green)}
+  .card.removed{border-color:#e6b3b3; background:var(--light-red)}
+  .card .head{
+    display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-bottom:1px solid var(--line); background:#fbfbfb;
+  }
+  .head .left{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+  .badge{
+    display:inline-flex; align-items:center; background:var(--yellow); color:#111; padding:4px 8px; border-radius:999px; font-size:12px; border:1px solid #e6db6c
+  }
+  .smallmuted{color:var(--muted); font-size:12px}
+  .expand{background:#fff; border:1px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px}
+
+  .table-wrap{overflow:auto}
+  .twocol{width:max-content; min-width:800px; border-collapse:separate; border-spacing:0; table-layout:fixed}
+  .twocol td, .twocol th{border-right:1px solid var(--line)}
+  .twocol tr{border-bottom:1px solid var(--line)}
+  .labelcell{
+    position:sticky; left:0; background:#fff; font-weight:600; width:100px; min-width:100px; max-width:100px; z-index:1;
+  }
+  .row-old .labelcell{background:#fff}
+  .row-new .labelcell{background:#fff}
+  .cell{
+    padding:10px; vertical-align:top; overflow:hidden; text-overflow:ellipsis; white-space:normal; word-break:break-word;
+  }
+  .changed{ background: var(--pink) }
+  mark.diff{ background: var(--pink); padding:0 0.5px; border-radius:2px }
+
+  .row-flag{margin-left:6px; font-size:11px; padding:2px 6px; border-radius:6px; border:1px solid var(--line)}
+  .flag-new{background:#dcffdc}
+  .flag-removed{background:#ffdcdc}
+
+  /* Pagination */
+  .pager{display:flex; gap:8px; align-items:center; margin:12px 16px}
+  .pager .info{color:var(--muted)}
+  .pager button{padding:8px 10px; border-radius:8px}
+  .pager select{padding:6px 8px}
+
+  /* Issues */
+  .issues{margin:12px 16px; padding:10px; background:#fff; border:1px solid var(--line); border-radius:12px}
+  .issues h4{margin:0 0 8px}
+  .issues pre{white-space:pre-wrap; background:#f8f8f8; border:1px solid var(--line); padding:8px; border-radius:8px; max-height:220px; overflow:auto}
+
+  /* Accessibility helpers */
+  .sr-only{position:absolute; left:-10000px; width:1px; height:1px; overflow:hidden}
+
+  /* Button row wrap */
+  .actions{display:flex; gap:10px; flex-wrap:wrap}
+
+  /* Multi-select */
+  .multiselect{min-width:220px; max-width:360px}
+
+  /* Totals for "Estimated Pre OH Cost" */
+  .totals{display:flex; gap:12px; flex-wrap:wrap}
+  .totals .kpi{min-width:180px}
+
+</style>
+</head>
+<body>
+  <!-- ===== Toolbar ===== -->
+  <div class="toolbar" role="region" aria-label="Controls">
+    <h1>CSV Diff — Left/Old vs Right/New</h1>
+
+    <div class="row">
+      <div class="group">
+        <div class="field">
+          <label for="fileA">Left / Old (CSV)</label>
+          <input id="fileA" type="file" accept=".csv,text/csv" />
+        </div>
+        <div class="field">
+          <label for="fileB">Right / New (CSV)</label>
+          <input id="fileB" type="file" accept=".csv,text/csv" />
+        </div>
+        <div class="field">
+          <label for="pkIndex">Primary key column index (1-based)</label>
+          <input id="pkIndex" type="number" min="1" step="1" value="1" />
+          <div class="subtle" id="effectiveKey">Key: column 1</div>
+        </div>
+        <div class="field">
+          <label class="switch" aria-label="Auto-detect key column named ID">
+            <input id="autoID" type="checkbox" checked />
+            <span class="slider" tabindex="0" role="switch" aria-checked="true"></span>
+            <span class="label">Auto-detect key column named ID</span>
+          </label>
+          <div class="subtle">If found in both files, uses ID regardless of index.</div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="field">
+          <label class="switch" aria-label="Show only changed rows">
+            <input id="onlyChanged" type="checkbox" checked />
+            <span class="slider" tabindex="0" role="switch" aria-checked="true"></span>
+            <span class="label">Show only changed rows</span>
+          </label>
+        </div>
+        <div class="field">
+          <label class="switch" aria-label="Trim whitespace before comparing">
+            <input id="trimSpace" type="checkbox" checked />
+            <span class="slider" tabindex="0" role="switch" aria-checked="true"></span>
+            <span class="label">Trim whitespace</span>
+          </label>
+        </div>
+        <div class="field">
+          <label class="switch" aria-label="Case-sensitive compare">
+            <input id="caseSensitive" type="checkbox" />
+            <span class="slider" tabindex="0" role="switch" aria-checked="false"></span>
+            <span class="label">Case-sensitive compare</span>
+          </label>
+        </div>
+        <div class="field">
+          <label class="switch" aria-label="Highlight only differing substring">
+            <input id="substrDiff" type="checkbox" checked />
+            <span class="slider" tabindex="0" role="switch" aria-checked="true"></span>
+            <span class="label">Highlight differing substring</span>
+          </label>
+        </div>
+        <div class="field">
+          <label class="switch" aria-label="Treat empty and null as equal">
+            <input id="nullEqual" type="checkbox" />
+            <span class="slider" tabindex="0" role="switch" aria-checked="false"></span>
+            <span class="label">Treat empty and null as equal</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="field" style="min-width:240px">
+          <label for="excludeCols">Exclude columns from comparison</label>
+          <select id="excludeCols" class="multiselect" multiple size="5" aria-label="Exclude columns by header name"></select>
+          <div class="subtle">Still displayed, just not diffed.</div>
+          <div class="actions">
+            <button class="secondary" id="selectAllCols" type="button">Select All</button>
+            <button class="secondary" id="clearAllCols" type="button">Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="field">
+          <label>&nbsp;</label>
+          <div class="actions">
+            <button id="compareBtn" type="button">Compare</button>
+            <button id="resetBtn" type="button" class="secondary">Reset</button>
+            <button id="downloadBtn" type="button" class="ghost" disabled>Download differences as CSV</button>
+            <button id="demoBtn" type="button" class="secondary">Load demo data</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Totals for "Estimated Pre OH Cost" -->
+    <div class="panel" id="totalsPanel" aria-live="polite">
+      <h3>Totals — “Estimated Pre OH Cost”</h3>
+      <div class="totals">
+        <div class="kpi"><div class="k">Old total</div><div class="v" id="oldTotal">—</div></div>
+        <div class="kpi"><div class="k">New total</div><div class="v" id="newTotal">—</div></div>
+        <div class="kpi"><div class="k">Difference (New − Old)</div><div class="v" id="diffTotal">—</div></div>
+        <div class="kpi"><div class="k">Status</div><div class="v" id="totalStatus">Awaiting data…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Legend ===== -->
+  <div class="legend" role="note" aria-label="Legend">
+    <span class="chip"><span class="swatch pink"></span>Changed cell</span>
+    <span class="chip"><span class="swatch yellow"></span>Changed columns (badges)</span>
+    <span class="chip"><span class="swatch green"></span>New row (exists only in Right/New)</span>
+    <span class="chip"><span class="swatch red"></span>Removed row (exists only in Left/Old)</span>
+    <span class="chip">Effective key: <strong id="legendKey">column 1</strong></span>
+  </div>
+
+  <!-- ===== Summaries ===== -->
+  <div class="panel" id="summaryPanel">
+    <div class="grid">
+      <div class="kpi"><div class="k">Total keys</div><div class="v" id="kTotal">0</div></div>
+      <div class="kpi"><div class="k">Changed keys</div><div class="v" id="kChanged">0</div></div>
+      <div class="kpi"><div class="k">Added rows (New only)</div><div class="v" id="kAdded">0</div></div>
+      <div class="kpi"><div class="k">Removed rows (Old only)</div><div class="v" id="kRemoved">0</div></div>
+      <div class="kpi"><div class="k">Headers aligned</div><div class="v" id="kHeaders">Yes</div></div>
+    </div>
+  </div>
+
+  <!-- ===== Column ruler (with resizers) ===== -->
+  <div class="ruler-wrap" id="rulerWrap" aria-label="Column ruler (drag to resize)">
+    <table class="ruler" id="rulerTable" role="presentation">
+      <thead><tr id="rulerHead"><!-- filled by JS --></tr></thead>
+    </table>
+  </div>
+
+  <!-- ===== Pagination ===== -->
+  <div class="pager" id="pager" hidden>
+    <button id="firstPage" class="secondary" type="button">⏮</button>
+    <button id="prevPage"  class="secondary" type="button">◀</button>
+    <span class="info" id="pageInfo">Page 1 / 1</span>
+    <button id="nextPage"  class="secondary" type="button">▶</button>
+    <button id="lastPage"  class="secondary" type="button">⏭</button>
+    <span class="info">• Page size</span>
+    <select id="pageSize">
+      <option value="100">100</option>
+      <option value="200" selected>200</option>
+      <option value="500">500</option>
+      <option value="1000">1000</option>
+    </select>
+  </div>
+
+  <!-- ===== Results ===== -->
+  <div id="results" aria-live="polite"><!-- cards inserted here --></div>
+
+  <!-- ===== Issues / Warnings ===== -->
+  <div class="issues" id="issues" hidden>
+    <h4>Issues & Warnings</h4>
+    <div id="issuesList"></div>
+    <details>
+      <summary>Unit-test-like diff function check (proof that changed substrings get marked)</summary>
+      <pre id="diffTestOut"></pre>
+    </details>
+  </div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* =============================
+     Utilities
+  ==============================*/
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+  const state = {
+    // Data
+    headersA: [], headersB: [],
+    rowsA: [], rowsB: [],
+    byIndexMode: false, // headers differ/missing
+    keyName: null,      // "ID" if auto found
+    keyIndex: 0,        // 0-based when using index
+    excludeSet: new Set(),
+    options: {
+      trim: true,
+      caseSensitive: false,
+      substrDiff: true,
+      nullEqual: false,
+      onlyChanged: true
+    },
+    // Computed
+    idxA: new Map(), idxB: new Map(),
+    duplicatesA: [], duplicatesB: [],
+    unionKeys: [],
+    diffIndex: [],   // normalized changes for CSV download
+    cards: [],       // data prepared for rendering
+    page: 1, pageSize: 200,
+    columnWidths: new Map(), // idx -> px
+    totals: { old: null, neu: null, diff: null },
+    effectiveKeyLabel: "column 1",
+  };
+
+  function safeNumber(x){
+    if (x == null) return NaN;
+    const s = String(x).replace(/[,\s₹$]/g,'');
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  function sumColumn(rows, hdrs, name){
+    if (!hdrs || hdrs.length===0) return null;
+    const idx = hdrs.indexOf(name);
+    if (idx < 0) return null;
+    let total = 0, seen = false;
+    for (const r of rows){
+      const v = r[idx];
+      const n = safeNumber(v);
+      if (!Number.isNaN(n)){
+        total += n; seen = true;
+      }
+    }
+    return seen ? total : null;
+  }
+
+  function fmtMoney(n){
+    if (n == null) return '—';
+    return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n);
+  }
+
+  // String normalize for comparison
+  function normalize(val, opts){
+    if (val == null) return opts.nullEqual ? "" : null;
+    let s = String(val);
+    if (opts.trim) s = s.trim();
+    if (!opts.caseSensitive) s = s.toLowerCase();
+    return s;
+  }
+
+  // Tokenize by words (keeps punctuation as tokens)
+  function wordTokens(s){
+    // split words and keep separators
+    const re = /(\w+|\s+|[^\w\s])/g;
+    return s.match(re) || [s];
+  }
+
+  // LCS (generic) – returns indices of the LCS elements in a and b
+  function lcs(a, b){
+    const n=a.length, m=b.length;
+    const dp = Array.from({length:n+1}, ()=>Array(m+1).fill(0));
+    for (let i=1;i<=n;i++){
+      for (let j=1;j<=m;j++){
+        dp[i][j] = (a[i-1]===b[j-1]) ? dp[i-1][j-1]+1 : Math.max(dp[i-1][j], dp[i][j-1]);
+      }
+    }
+    // backtrack
+    let i=n, j=m, seq=[];
+    while (i>0 && j>0){
+      if (a[i-1]===b[j-1]){ seq.push([i-1,j-1]); i--; j--; }
+      else if (dp[i-1][j] >= dp[i][j-1]) i--;
+      else j--;
+    }
+    return seq.reverse();
+  }
+
+  // Diff to segments (word-level). Returns [{text, same:boolean}]
+  function diffSegments(oldStr, newStr){
+    const A = wordTokens(oldStr), B = wordTokens(newStr);
+    const pairs = lcs(A,B);
+    let ai=0, bi=0, pi=0;
+    const segOld=[], segNew=[];
+    // Build segments aligned to LCS
+    while (pi < pairs.length || ai < A.length || bi < B.length){
+      const next = pairs[pi];
+      const aStop = next ? next[0] : A.length;
+      const bStop = next ? next[1] : B.length;
+
+      // any differing region before next match
+      if (ai < aStop || bi < bStop){
+        if (ai < aStop){
+          segOld.push({text:A.slice(ai,aStop).join(''), same:false});
+          ai = aStop;
+        }
+        if (bi < bStop){
+          segNew.push({text:B.slice(bi,bStop).join(''), same:false});
+          bi = bStop;
+        }
+      }
+      // matched token
+      if (next){
+        segOld.push({text:A[next[0]], same:true});
+        segNew.push({text:B[next[1]], same:true});
+        ai = next[0]+1; bi = next[1]+1; pi++;
+      }
+    }
+    return {old:segOld, neu:segNew};
+  }
+
+  // Unit-test-like API the renderer uses (acceptance criteria)
+  // Returns arrays of [start,end) spans to highlight in each string (character-based),
+  // approximated by converting differing segments from word diff to char spans.
+  function diffSpans(oldStr, newStr){
+    const segs = diffSegments(oldStr, newStr);
+    const outOld=[], outNew=[];
+    // old
+    let ofs = 0;
+    for (const s of segs.old){
+      const len = s.text.length;
+      if (!s.same && len>0) outOld.push([ofs, ofs+len]);
+      ofs += len;
+    }
+    // new
+    ofs = 0;
+    for (const s of segs.neu){
+      const len = s.text.length;
+      if (!s.same && len>0) outNew.push([ofs, ofs+len]);
+      ofs += len;
+    }
+    return { old: outOld, neu: outNew };
+  }
+
+  // Render text with <mark class="diff"> around differing spans
+  function renderWithSpans(text, spans){
+    if (!spans || spans.length===0) return escapeHTML(text);
+    let res = "", i=0;
+    for (const [s,e] of spans){
+      if (i < s) res += escapeHTML(text.slice(i, s));
+      res += `<mark class="diff">${escapeHTML(text.slice(s, e))}</mark>`;
+      i = e;
+    }
+    if (i < text.length) res += escapeHTML(text.slice(i));
+    return res;
+  }
+
+  function escapeHTML(s){
+    return String(s)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
+  }
+
+  function warn(msg){
+    const box = $('#issues'); const list = $('#issuesList');
+    box.hidden = false;
+    const div = document.createElement('div');
+    div.className = 'panel';
+    div.style.margin = '8px 0';
+    div.textContent = msg;
+    list.appendChild(div);
+  }
+
+  function infoIssues(title, body){
+    const box = $('#issues'); const list = $('#issuesList');
+    box.hidden = false;
+    const wrap = document.createElement('div');
+    wrap.className = 'panel';
+    wrap.style.margin = '8px 0';
+    const h = document.createElement('div'); h.style.fontWeight='700'; h.style.marginBottom='6px'; h.textContent = title;
+    const pre = document.createElement('pre'); pre.textContent = body;
+    wrap.appendChild(h); wrap.appendChild(pre);
+    list.appendChild(wrap);
+  }
+
+  function clearIssues(){
+    $('#issuesList').innerHTML = '';
+    $('#issues').hidden = true;
+  }
+
+  // CSV fallback parser (basic)
+  function fallbackParse(text){
+    // Very simple CSV parser (no embedded newlines inside quotes). For robustness, prefer Papa.
+    const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n').filter(x=>x.length>0);
+    const out = [];
+    for (const line of lines){
+      const row=[]; let s=''; let inQ=false;
+      for (let i=0;i<line.length;i++){
+        const c=line[i];
+        if (c === '"'){
+          if (inQ && line[i+1] === '"'){ s+='"'; i++; }
+          else inQ = !inQ;
+        }else if (c === ',' && !inQ){
+          row.push(s); s='';
+        }else{
+          s += c;
+        }
+      }
+      row.push(s);
+      out.push(row);
+    }
+    const headers = out[0] || [];
+    const rows = out.slice(1);
+    return { headers, rows };
+  }
+
+  function parseCSVFile(file){
+    return new Promise((resolve, reject)=>{
+      if (window.Papa){
+        Papa.parse(file, {
+          complete: (res)=>{
+            const data = res.data;
+            // Choose header mode based on first row being strings
+            const first = data[0] || [];
+            let headers = first, startIdx=1;
+            // If Papa auto-parsed with header:true we’d have objects. We forced default. Keep arrays.
+            if (!headers || headers.length===0){ resolve({ headers:[], rows:[] }); return; }
+            const rows = data.slice(startIdx).filter(r=>r && r.length>0 && !(r.length===1 && r[0]===''));
+            resolve({ headers, rows });
+          },
+          error: err => reject(err),
+          skipEmptyLines: 'greedy',
+          dynamicTyping: false
+        });
+      }else{
+        // Fallback
+        const reader = new FileReader();
+        reader.onload = e=>{
+          try{
+            const {headers, rows} = fallbackParse(e.target.result);
+            resolve({headers, rows});
+          }catch(err){ reject(err); }
+        };
+        reader.onerror = reject;
+        reader.readAsText(file);
+      }
+    });
+  }
+
+  function parseCSVText(text){
+    if (window.Papa){
+      const res = Papa.parse(text.trim(), {skipEmptyLines:'greedy', dynamicTyping:false});
+      const data = res.data;
+      const headers = data[0] || [];
+      const rows = data.slice(1);
+      return { headers, rows };
+    }else{
+      return fallbackParse(text);
+    }
+  }
+
+  // Build an index from key -> {row, rowNum}. Detect duplicates.
+  function buildIndex(rows, keyIndex){
+    const map = new Map(); const dup = [];
+    for (let i=0;i<rows.length;i++){
+      const r = rows[i];
+      const k = (r[keyIndex] != null) ? String(r[keyIndex]) : '';
+      if (map.has(k)) dup.push({key:k, rowNum:i+2}); // +2 accounts for header + 1-based
+      else map.set(k, {row:r, rowNum:i+2});
+    }
+    return { map, dup };
+  }
+
+  // Build index by header name
+  function buildIndexByName(rows, headers, keyName){
+    const idx = headers.indexOf(keyName);
+    if (idx<0) return { map:new Map(), dup:[] };
+    return buildIndex(rows, idx);
+  }
+
+  // Get effective key column choice
+  function computeKey(){
+    const useAuto = $('#autoID').checked;
+    const hasIDA = state.headersA.includes('ID');
+    const hasIDB = state.headersB.includes('ID');
+
+    if (useAuto && hasIDA && hasIDB){
+      state.keyName = 'ID';
+      state.keyIndex = null;
+      state.effectiveKeyLabel = 'ID';
+      $('#effectiveKey').textContent = 'Key: ID';
+      $('#legendKey').textContent = 'ID';
+      return;
+    }
+    state.keyName = null;
+    const idx1 = Math.max(1, parseInt($('#pkIndex').value || '1', 10));
+    state.keyIndex = idx1 - 1;
+    state.effectiveKeyLabel = `column ${idx1}`;
+    $('#effectiveKey').textContent = `Key: column ${idx1}`;
+    $('#legendKey').textContent = `column ${idx1}`;
+  }
+
+  // Prepare exclude multi-select options
+  function fillExcludeOptions(headers){
+    const sel = $('#excludeCols');
+    sel.innerHTML = '';
+    headers.forEach(h=>{
+      const opt = document.createElement('option');
+      opt.value = h; opt.textContent = h;
+      sel.appendChild(opt);
+    });
+    // Do not pre-select anything
+    state.excludeSet = new Set();
+  }
+
+  function readExcludeSelection(){
+    const sel = $('#excludeCols');
+    state.excludeSet = new Set(Array.from(sel.selectedOptions).map(o=>o.value));
+  }
+
+  // Sync toggle roles for accessibility
+  function syncSwitchAria(){
+    $$('.switch input').forEach(inp=>{
+      const slider = inp.nextElementSibling;
+      if (slider) slider.setAttribute('aria-checked', inp.checked ? 'true':'false');
+    });
+  }
+
+  /* =============================
+     Core: Compare & Prepare
+  ==============================*/
+  async function compare(){
+    clearIssues();
+    // reading options
+    state.options.trim = $('#trimSpace').checked;
+    state.options.caseSensitive = $('#caseSensitive').checked;
+    state.options.substrDiff = $('#substrDiff').checked;
+    state.options.nullEqual = $('#nullEqual').checked;
+    state.options.onlyChanged = $('#onlyChanged').checked;
+    syncSwitchAria();
+
+    // If no inputs yet from files or demo, guard
+    if (state.rowsA.length===0 || state.rowsB.length===0){
+      warn('Please load both CSVs (Old & New) or click “Load demo data”.');
+      return;
+    }
+
+    // Key selection
+    computeKey();
+
+    // Check header alignment
+    state.byIndexMode = (JSON.stringify(state.headersA) !== JSON.stringify(state.headersB));
+    $('#kHeaders').textContent = state.byIndexMode ? 'No (comparing by index)' : 'Yes';
+    if (state.byIndexMode){
+      warn('Headers differ between files. Proceeding by column index.');
+    }
+
+    // Set default column widths if not set
+    if (state.columnWidths.size === 0){
+      const count = state.headersA.length || state.headersB.length;
+      for (let i=0;i<count;i++){
+        // 180px default, tweak narrower for the first label column
+        state.columnWidths.set(i, 180);
+      }
+    }
+
+    // Build index maps
+    if (state.keyName){
+      const idxA = buildIndexByName(state.rowsA, state.headersA, state.keyName);
+      const idxB = buildIndexByName(state.rowsB, state.headersB, state.keyName);
+      state.idxA = idxA.map; state.idxB = idxB.map;
+      state.duplicatesA = idxA.dup; state.duplicatesB = idxB.dup;
+    }else{
+      const idxA = buildIndex(state.rowsA, state.keyIndex);
+      const idxB = buildIndex(state.rowsB, state.keyIndex);
+      state.idxA = idxA.map; state.idxB = idxB.map;
+      state.duplicatesA = idxA.dup; state.duplicatesB = idxB.dup;
+    }
+
+    // Union of keys
+    const keys = new Set([...state.idxA.keys(), ...state.idxB.keys()]);
+    state.unionKeys = Array.from(keys);
+
+    // Totals for “Estimated Pre OH Cost”
+    const oldTotal = sumColumn(state.rowsA, state.headersA, 'Estimated Pre OH Cost');
+    const newTotal = sumColumn(state.rowsB, state.headersB, 'Estimated Pre OH Cost');
+    state.totals.old = oldTotal;
+    state.totals.neu = newTotal;
+    state.totals.diff = (oldTotal!=null && newTotal!=null) ? (newTotal - oldTotal) : null;
+    updateTotalsUI();
+
+    // Issues: duplicates
+    if (state.duplicatesA.length>0){
+      infoIssues('Duplicate keys in Old', state.duplicatesA.map(x=>`Key "${x.key}" at row ${x.rowNum}`).join('\n'));
+    }
+    if (state.duplicatesB.length>0){
+      infoIssues('Duplicate keys in New', state.duplicatesB.map(x=>`Key "${x.key}" at row ${x.rowNum}`).join('\n'));
+    }
+
+    // Prepare normalized changes & cards
+    buildCardsAndNormalizedDiff();
+
+    // Pagination
+    state.page = 1;
+    $('#pager').hidden = state.cards.length === 0;
+    renderRuler();
+    renderPage();
+    $('#downloadBtn').disabled = state.diffIndex.length === 0;
+
+    // Unit-test-like output for diff function
+    unitDiffTest();
+  }
+
+  function valueAt(row, headers, idx, byIndex){
+    if (!row) return null;
+    return row[idx];
+  }
+
+  function columnNames(){
+    // Display names come from A if possible, else B, else indices
+    const hA = state.headersA || [];
+    const hB = state.headersB || [];
+    const n = Math.max(hA.length, hB.length);
+    const names = [];
+    for (let i=0;i<n;i++){
+      const h = hA[i] ?? hB[i] ?? `Column ${i+1}`;
+      names.push(String(h));
+    }
+    return names;
+  }
+
+  function buildCardsAndNormalizedDiff(){
+    readExcludeSelection();
+    const names = columnNames();
+    const opts = state.options;
+    const ex = state.excludeSet;
+
+    const cards = [];
+    const difflog = [];
+
+    let changedCount = 0, addedCount = 0, removedCount = 0;
+
+    const hA = state.headersA, hB = state.headersB;
+    const byIndex = state.byIndexMode;
+
+    const keyLabel = state.keyName ? state.keyName : `column ${state.keyIndex+1}`;
+
+    // Build once to avoid per-row recreation
+    const indices = names.map((_,i)=>i);
+
+    for (const key of state.unionKeys){
+      const left = state.idxA.get(key);
+      const right = state.idxB.get(key);
+
+      if (left && right){
+        const rowA = left.row; const rowB = right.row;
+        const changedCols = [];
+        const cellPairs = []; // [{oldVal, newVal, htmlOld, htmlNew, changed, excluded}...]
+
+        indices.forEach(ci=>{
+          const oldV = valueAt(rowA, hA, ci, byIndex);
+          const newV = valueAt(rowB, hB, ci, byIndex);
+          const dispName = names[ci];
+
+          const excluded = ex.has(dispName);
+
+          // Compare using options
+          const nOld = normalize(oldV, opts);
+          const nNew = normalize(newV, opts);
+
+          let equal;
+          if (opts.nullEqual){
+            const a = (nOld==null||nOld==='') ? '' : nOld;
+            const b = (nNew==null||nNew==='') ? '' : nNew;
+            equal = a === b;
+          }else{
+            equal = nOld === nNew;
+          }
+
+          let changed = !excluded && !equal;
+
+          let htmlOld = escapeHTML(oldV ?? '');
+          let htmlNew = escapeHTML(newV ?? '');
+
+          if (changed){
+            if (opts.substrDiff){
+              const spans = diffSpans(String(oldV ?? ''), String(newV ?? ''));
+              htmlOld = renderWithSpans(String(oldV ?? ''), spans.old);
+              htmlNew = renderWithSpans(String(newV ?? ''), spans.neu);
+            }
+            // else: highlight whole cell via CSS class later
+
+            changedCols.push(dispName);
+            difflog.push({
+              key, column_name: dispName,
+              old_value: oldV ?? '',
+              new_value: newV ?? '',
+              change_type: 'modified'
+            });
+          }
+
+          cellPairs.push({ oldV, newV, htmlOld, htmlNew, changed, excluded});
+        });
+
+        const include = !opts.onlyChanged || changedCols.length>0;
+        if (include){
+          if (changedCols.length>0) changedCount++;
+          cards.push({
+            type:'pair', key, changedCols, cellPairs
+          });
+        }
+
+      }else if (!left && right){
+        addedCount++;
+        // New row (green)
+        const rowB = right.row;
+        const cellNew = indices.map(ci=>{
+          const v = valueAt(rowB, hB, ci, byIndex);
+          return { oldV:null, newV:v, htmlOld:'', htmlNew:escapeHTML(v ?? ''), changed:false, excluded:false };
+        });
+        cards.push({ type:'added', key, cellPairs:cellNew, changedCols:[] });
+        difflog.push({ key, column_name:'', old_value:'', new_value:'', change_type:'added_row' });
+
+      }else if (left && !right){
+        removedCount++;
+        // Removed row (red)
+        const rowA = left.row;
+        const cellOld = indices.map(ci=>{
+          const v = valueAt(rowA, hA, ci, byIndex);
+          return { oldV:v, newV:null, htmlOld:escapeHTML(v ?? ''), htmlNew:'', changed:false, excluded:false };
+        });
+        cards.push({ type:'removed', key, cellPairs:cellOld, changedCols:[] });
+        difflog.push({ key, column_name:'', old_value:'', new_value:'', change_type:'removed_row' });
+      }
+    }
+
+    // Update summary KPIs
+    $('#kTotal').textContent = String(state.unionKeys.length);
+    $('#kChanged').textContent = String(changedCount);
+    $('#kAdded').textContent = String(addedCount);
+    $('#kRemoved').textContent = String(removedCount);
+
+    state.cards = cards;
+    state.diffIndex = difflog;
+  }
+
+  /* =============================
+     Rendering
+  ==============================*/
+  function renderRuler(){
+    const names = columnNames();
+    const head = $('#rulerHead');
+    head.innerHTML = '';
+
+    // First sticky label column (Row label)
+    const th0 = document.createElement('th');
+    th0.style.position='sticky'; th0.style.left='0'; th0.style.zIndex='2';
+    th0.style.width = '100px'; th0.textContent = 'Row';
+    head.appendChild(th0);
+
+    names.forEach((name, idx)=>{
+      const th = document.createElement('th');
+      const w = state.columnWidths.get(idx) || 180;
+      th.style.width = w+'px';
+      th.style.minWidth = w+'px';
+      th.style.maxWidth = w+'px';
+
+      const span = document.createElement('span');
+      span.className = 'title';
+      span.textContent = name;
+      th.appendChild(span);
+
+      const grip = document.createElement('div');
+      grip.className = 'resizer';
+      grip.tabIndex = 0;
+      grip.setAttribute('role','separator');
+      grip.setAttribute('aria-label',`Resize column ${idx+1} (${name})`);
+      grip.addEventListener('mousedown', ev => startResize(ev, idx, th));
+      grip.addEventListener('keydown', ev => {
+        if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight'){
+          ev.preventDefault();
+          const current = state.columnWidths.get(idx) || 180;
+          const delta = ev.key === 'ArrowLeft' ? -10 : 10;
+          const nw = Math.max(60, current + delta);
+          state.columnWidths.set(idx, nw);
+          applyWidths();
+        }
+      });
+      th.appendChild(grip);
+
+      head.appendChild(th);
+    });
+
+    applyWidths(); // ensure all tables follow ruler widths
+  }
+
+  let resizing = null;
+  function startResize(ev, idx, th){
+    ev.preventDefault();
+    resizing = { idx, startX: ev.clientX, startW: th.getBoundingClientRect().width };
+    document.addEventListener('mousemove', onResizeMove);
+    document.addEventListener('mouseup', endResize, { once:true });
+  }
+  function onResizeMove(ev){
+    if (!resizing) return;
+    const dx = ev.clientX - resizing.startX;
+    const nw = Math.max(60, resizing.startW + dx);
+    state.columnWidths.set(resizing.idx, nw);
+    applyWidths();
+  }
+  function endResize(){
+    resizing = null;
+    document.removeEventListener('mousemove', onResizeMove);
+    // Persist to sessionStorage
+    persistWidths();
+  }
+  function applyWidths(){
+    const names = columnNames();
+    // Apply to ruler columns (already done), and to data tables via CSS vars
+    const results = $('#results');
+    names.forEach((_,idx)=>{
+      const w = state.columnWidths.get(idx) || 180;
+      results.style.setProperty(`--col-w-${idx}`, w+'px');
+      // Also reflect to ruler headers
+      const th = $('#rulerHead').children[idx+1]; // +1 for the label column
+      if (th){
+        th.style.width = w+'px';
+        th.style.minWidth = w+'px';
+        th.style.maxWidth = w+'px';
+      }
+    });
+    // Update all cells width
+    $$('.cell[data-col-idx]').forEach(td=>{
+      const idx = parseInt(td.getAttribute('data-col-idx'),10);
+      const w = state.columnWidths.get(idx) || 180;
+      td.style.width = w+'px';
+      td.style.minWidth = w+'px';
+      td.style.maxWidth = w+'px';
+    });
+  }
+  function persistWidths(){
+    const obj = {};
+    state.columnWidths.forEach((v,k)=> obj[k]=v);
+    sessionStorage.setItem('csvdiff_widths', JSON.stringify(obj));
+  }
+  function restoreWidths(){
+    try{
+      const s = sessionStorage.getItem('csvdiff_widths');
+      if (!s) return;
+      const obj = JSON.parse(s);
+      Object.keys(obj).forEach(k=>{
+        state.columnWidths.set(parseInt(k,10), obj[k]);
+      });
+    }catch{}
+  }
+
+  function renderPage(){
+    const wrap = $('#results');
+    wrap.innerHTML = '';
+
+    const cards = state.cards;
+    const total = cards.length;
+    if (total === 0){
+      const empty = document.createElement('div');
+      empty.className = 'panel';
+      empty.textContent = 'No rows to display. Check your filters or try turning off “Show only changed rows”.';
+      wrap.appendChild(empty);
+      $('#pager').hidden = true;
+      return;
+    }
+
+    const pageSize = state.pageSize = parseInt($('#pageSize').value, 10) || 200;
+    const maxPage = Math.max(1, Math.ceil(total / pageSize));
+    state.page = Math.min(state.page, maxPage);
+    const start = (state.page-1)*pageSize;
+    const end = Math.min(total, start + pageSize);
+
+    $('#pager').hidden = false;
+    $('#pageInfo').textContent = `Page ${state.page} / ${maxPage}`;
+
+    for (let i=start; i<end; i++){
+      wrap.appendChild(renderCard(cards[i]));
+    }
+
+    applyWidths(); // ensure widths apply to newly created cells
+  }
+
+  function renderCard(card){
+    const names = columnNames();
+    const div = document.createElement('div');
+    div.className = 'card';
+    if (card.type==='added') div.classList.add('added');
+    if (card.type==='removed') div.classList.add('removed');
+
+    const head = document.createElement('div');
+    head.className = 'head';
+    const left = document.createElement('div');
+    left.className = 'left';
+    const title = document.createElement('div');
+    title.innerHTML = `<strong>Key: </strong>${escapeHTML(card.key)}`;
+    left.appendChild(title);
+
+    if (card.type==='added'){
+      const b = document.createElement('span'); b.className='row-flag flag-new row-flag'; b.textContent='New row';
+      left.appendChild(b);
+    }
+    if (card.type==='removed'){
+      const b = document.createElement('span'); b.className='row-flag flag-removed row-flag'; b.textContent='Removed row';
+      left.appendChild(b);
+    }
+
+    if (card.changedCols && card.changedCols.length){
+      for (const c of card.changedCols){
+        const badge = document.createElement('span'); badge.className='badge'; badge.textContent = c;
+        left.appendChild(badge);
+      }
+    }else if (card.type==='pair'){
+      const s = document.createElement('span'); s.className='smallmuted'; s.textContent = 'No column changes';
+      left.appendChild(s);
+    }
+
+    const right = document.createElement('div');
+    const btn = document.createElement('button'); btn.className='expand secondary'; btn.textContent = 'Toggle';
+    btn.addEventListener('click', ()=>{
+      body.hidden = !body.hidden;
+    });
+    right.appendChild(btn);
+
+    head.appendChild(left); head.appendChild(right);
+    div.appendChild(head);
+
+    const body = document.createElement('div');
+    body.className = 'table-wrap';
+    const table = document.createElement('table');
+    table.className = 'twocol';
+    const tbody = document.createElement('tbody');
+
+    if (card.type==='pair'){
+      // Two rows: Old, New
+      const tr1 = document.createElement('tr'); tr1.className='row-old';
+      const tr2 = document.createElement('tr'); tr2.className='row-new';
+
+      // label cells
+      const l1 = document.createElement('td'); l1.className='labelcell cell'; l1.textContent='Old'; tr1.appendChild(l1);
+      const l2 = document.createElement('td'); l2.className='labelcell cell'; l2.textContent='New'; tr2.appendChild(l2);
+
+      card.cellPairs.forEach((c, ci)=>{
+        const td1 = document.createElement('td'); td1.className='cell'; td1.setAttribute('data-col-idx', String(ci));
+        const td2 = document.createElement('td'); td2.className='cell'; td2.setAttribute('data-col-idx', String(ci));
+
+        // Set widths via inline to ensure consistency
+        const w = state.columnWidths.get(ci) || 180;
+        [td1,td2].forEach(td=>{
+          td.style.width = w+'px'; td.style.minWidth = w+'px'; td.style.maxWidth = w+'px';
+          td.title = 'Click to copy full text'; td.tabIndex = 0;
+          td.addEventListener('click', ()=>copyToClipboard(stripHTML(td.innerHTML)));
+        });
+
+        if (c.changed){
+          if (!state.options.substrDiff){
+            td1.classList.add('changed');
+            td2.classList.add('changed');
+          }
+        }
+
+        td1.innerHTML = c.htmlOld;
+        td2.innerHTML = c.htmlNew;
+
+        tr1.appendChild(td1); tr2.appendChild(td2);
+      });
+
+      tbody.appendChild(tr1); tbody.appendChild(tr2);
+
+    }else if (card.type==='added'){
+      const tr = document.createElement('tr');
+      const l = document.createElement('td'); l.className='labelcell cell'; l.textContent='New'; tr.appendChild(l);
+      card.cellPairs.forEach((c, ci)=>{
+        const td = document.createElement('td'); td.className='cell'; td.setAttribute('data-col-idx', String(ci));
+        const w = state.columnWidths.get(ci) || 180;
+        td.style.width = w+'px'; td.style.minWidth = w+'px'; td.style.maxWidth = w+'px';
+        td.innerHTML = c.htmlNew;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+
+    }else if (card.type==='removed'){
+      const tr = document.createElement('tr');
+      const l = document.createElement('td'); l.className='labelcell cell'; l.textContent='Old'; tr.appendChild(l);
+      card.cellPairs.forEach((c, ci)=>{
+        const td = document.createElement('td'); td.className='cell'; td.setAttribute('data-col-idx', String(ci));
+        const w = state.columnWidths.get(ci) || 180;
+        td.style.width = w+'px'; td.style.minWidth = w+'px'; td.style.maxWidth = w+'px';
+        td.innerHTML = c.htmlOld;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    }
+
+    table.appendChild(tbody);
+    body.appendChild(table);
+    div.appendChild(body);
+    return div;
+  }
+
+  function stripHTML(html){
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    return div.textContent || div.innerText || '';
+  }
+
+  function copyToClipboard(text){
+    if (!text) return;
+    navigator.clipboard?.writeText(text).catch(()=>{});
+  }
+
+  /* =============================
+     CSV Download of differences
+  ==============================*/
+  function downloadDiffCSV(){
+    if (!state.diffIndex || state.diffIndex.length===0) return;
+    const rows = [['key','column_name','old_value','new_value','change_type']];
+    for (const r of state.diffIndex){
+      rows.push([r.key, r.column_name, r.old_value, r.new_value, r.change_type]);
+    }
+    const csv = rows.map(r=>r.map(v=>csvEscape(v)).join(',')).join('\r\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'diff_report.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+  function csvEscape(v){
+    let s = String(v ?? '');
+    if (/[,"\n]/.test(s)){
+      s = '"' + s.replace(/"/g,'""') + '"';
+    }
+    return s;
+  }
+
+  /* =============================
+     UI helpers
+  ==============================*/
+  function updateTotalsUI(){
+    $('#oldTotal').textContent = fmtMoney(state.totals.old);
+    $('#newTotal').textContent = fmtMoney(state.totals.neu);
+    $('#diffTotal').textContent = fmtMoney(state.totals.diff);
+    let status = 'Awaiting data…';
+    if (state.totals.old==null && state.totals.neu==null) status='Column “Estimated Pre OH Cost” not found in either file.';
+    else if (state.totals.old==null) status='Column found only in New.';
+    else if (state.totals.neu==null) status='Column found only in Old.';
+    else status = (state.totals.diff>0) ? 'Increased' : (state.totals.diff<0) ? 'Decreased' : 'No change';
+    $('#totalStatus').textContent = status;
+  }
+
+  function unitDiffTest(){
+    const out = $('#diffTestOut');
+    const a = 'Status moved from In Progress to Completed on 12/09';
+    const b = 'Status changed from In Progress to Done on 13/09';
+    const spans = diffSpans(a,b);
+    out.textContent =
+`Input A: ${a}
+Input B: ${b}
+Old spans: ${JSON.stringify(spans.old)}
+New spans: ${JSON.stringify(spans.neu)}
+Rendered Old: ${stripHTML(renderWithSpans(a, spans.old))}
+Rendered New: ${stripHTML(renderWithSpans(b, spans.neu))}
+
+(These spans are used by the renderer to mark only the changed substrings in pink.)`;
+  }
+
+  function loadDemo(){
+    clearIssues();
+    // Small demo data with deliberate differences, additions, removals
+    const csvA = `
+ID,Name,Price,Status,Estimated Pre OH Cost,Notes
+101,Widget A,100,In Progress,1200,alpha beta
+102,Widget B,250,Completed,2300,gamma
+103,Widget C,400,On Hold,0,delta note
+105,Widget E,900,Completed,1500,old only
+`.trim();
+
+    const csvB = `
+ID,Name,Price,Status,Estimated Pre OH Cost,Notes
+101,Widget A,110,Completed,2000,alpha beta UPDATED
+102,Widget B,250,Completed,2300,gamma
+104,Widget D,700,In Progress,3100,new row
+105,Widget E,950,Completed,1750,kept but price changed
+`.trim();
+
+    const A = parseCSVText(csvA);
+    const B = parseCSVText(csvB);
+    state.headersA = A.headers; state.rowsA = A.rows;
+    state.headersB = B.headers; state.rowsB = B.rows;
+    fillExcludeOptions(columnNames());
+    restoreWidths();
+    computeKey();
+    renderRuler();
+    compare();
+  }
+
+  function resetAll(){
+    // Inputs
+    $('#fileA').value = '';
+    $('#fileB').value = '';
+    $('#pkIndex').value = '1';
+    $('#autoID').checked = true;
+    $('#onlyChanged').checked = true;
+    $('#trimSpace').checked = true;
+    $('#caseSensitive').checked = false;
+    $('#substrDiff').checked = true;
+    $('#nullEqual').checked = false;
+    $('#excludeCols').innerHTML = '';
+    $('#downloadBtn').disabled = true;
+    $('#kTotal').textContent='0'; $('#kChanged').textContent='0'; $('#kAdded').textContent='0'; $('#kRemoved').textContent='0'; $('#kHeaders').textContent='Yes';
+    $('#results').innerHTML = '';
+    $('#rulerHead').innerHTML='';
+    $('#pager').hidden = true;
+    $('#issuesList').innerHTML=''; $('#issues').hidden=true;
+    $('#oldTotal').textContent='—'; $('#newTotal').textContent='—'; $('#diffTotal').textContent='—'; $('#totalStatus').textContent='Awaiting data…';
+    $('#effectiveKey').textContent='Key: column 1'; $('#legendKey').textContent='column 1';
+
+    // State
+    state.headersA=[]; state.headersB=[];
+    state.rowsA=[]; state.rowsB=[];
+    state.byIndexMode=false;
+    state.keyName=null; state.keyIndex=0;
+    state.excludeSet=new Set();
+    state.idxA.clear(); state.idxB.clear();
+    state.duplicatesA=[]; state.duplicatesB=[];
+    state.unionKeys=[];
+    state.diffIndex=[];
+    state.cards=[];
+    state.page=1; state.pageSize=200;
+    state.columnWidths.clear();
+    sessionStorage.removeItem('csvdiff_widths');
+  }
+
+  /* =============================
+     Event wiring
+  ==============================*/
+  $('#fileA').addEventListener('change', async (ev)=>{
+    clearIssues();
+    const f = ev.target.files[0];
+    if (!f) return;
+    try{
+      const {headers, rows} = await parseCSVFile(f);
+      state.headersA = headers.map(x=>String(x));
+      state.rowsA = rows.map(r => r.map(x=>x));
+      fillExcludeOptions(columnNames());
+      restoreWidths();
+    }catch(err){
+      warn('Error parsing Old CSV: ' + (err?.message || String(err)));
+    }
+  });
+
+  $('#fileB').addEventListener('change', async (ev)=>{
+    clearIssues();
+    const f = ev.target.files[0];
+    if (!f) return;
+    try{
+      const {headers, rows} = await parseCSVFile(f);
+      state.headersB = headers.map(x=>String(x));
+      state.rowsB = rows.map(r => r.map(x=>x));
+      fillExcludeOptions(columnNames());
+      restoreWidths();
+    }catch(err){
+      warn('Error parsing New CSV: ' + (err?.message || String(err)));
+    }
+  });
+
+  $('#compareBtn').addEventListener('click', compare);
+  $('#resetBtn').addEventListener('click', resetAll);
+  $('#downloadBtn').addEventListener('click', downloadDiffCSV);
+  $('#demoBtn').addEventListener('click', loadDemo);
+
+  $('#onlyChanged').addEventListener('change', ()=>{
+    state.options.onlyChanged = $('#onlyChanged').checked;
+    // Re-filter without re-parsing
+    if (state.cards.length){
+      buildCardsAndNormalizedDiff();
+      state.page = 1;
+      renderPage();
+      $('#downloadBtn').disabled = state.diffIndex.length === 0;
+    }
+    syncSwitchAria();
+  });
+  $$('#trimSpace,#caseSensitive,#substrDiff,#nullEqual,#autoID').forEach(id=>{
+    id.addEventListener('change', ()=> syncSwitchAria());
+  });
+
+  $('#selectAllCols').addEventListener('click', ()=>{
+    $$('#excludeCols option').forEach(o=>o.selected=true);
+  });
+  $('#clearAllCols').addEventListener('click', ()=>{
+    $$('#excludeCols option').forEach(o=>o.selected=false);
+  });
+
+  // Pagination
+  $('#firstPage').addEventListener('click', ()=>{ state.page=1; renderPage(); });
+  $('#prevPage').addEventListener('click', ()=>{ state.page=Math.max(1, state.page-1); renderPage(); });
+  $('#nextPage').addEventListener('click', ()=>{
+    const maxPage = Math.max(1, Math.ceil(state.cards.length / state.pageSize));
+    state.page = Math.min(maxPage, state.page+1); renderPage();
+  });
+  $('#lastPage').addEventListener('click', ()=>{
+    state.page = Math.max(1, Math.ceil(state.cards.length / state.pageSize)); renderPage();
+  });
+  $('#pageSize').addEventListener('change', ()=>{ state.page=1; renderPage(); });
+
+  // Keyboard focus for switches
+  $$('.switch .slider').forEach(sl=>{
+    sl.addEventListener('keydown', ev=>{
+      if (ev.key===' ' || ev.key==='Enter'){
+        ev.preventDefault();
+        const inp = sl.previousElementSibling;
+        inp.checked = !inp.checked;
+        sl.setAttribute('aria-checked', inp.checked ? 'true':'false');
+        // For the ones affecting rendering immediately
+        if (inp.id === 'onlyChanged'){
+          $('#onlyChanged').dispatchEvent(new Event('change'));
+        }
+      }
+    });
+  });
+
+  // Initial
+  restoreWidths();
+  syncSwitchAria();
+  unitDiffTest();
+
+})();
+</script>
+</body>
+</html>
